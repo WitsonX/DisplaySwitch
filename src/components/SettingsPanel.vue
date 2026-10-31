@@ -1,10 +1,38 @@
 <template>
   <div class="settings">
-    <div class="section-label">通用</div>
+    <div class="section-label">{{ $t('groupGeneral') }}</div>
     <div class="card s-card">
+      <div class="s-row">
+        <span class="s-label">
+          <span class="s-name">{{ $t('langName') }}</span>
+        </span>
+        <div class="s-seg">
+          <button
+            class="s-seg-btn"
+            :class="{ on: langPref === 'auto' }"
+            @click="$emit('set-lang', 'auto')"
+          >
+            {{ $t('langAuto') }}
+          </button>
+          <button
+            class="s-seg-btn"
+            :class="{ on: langPref === 'zh' }"
+            @click="$emit('set-lang', 'zh')"
+          >
+            {{ $t('langZh') }}
+          </button>
+          <button
+            class="s-seg-btn"
+            :class="{ on: langPref === 'en' }"
+            @click="$emit('set-lang', 'en')"
+          >
+            {{ $t('langEn') }}
+          </button>
+        </div>
+      </div>
       <label class="s-row s-toggle-row">
         <span class="s-label">
-          <span class="s-name">登录 macOS 时自动启动</span>
+          <span class="s-name">{{ $t('autostartName') }}</span>
         </span>
         <input
           type="checkbox"
@@ -15,8 +43,8 @@
       </label>
       <label class="s-row s-toggle-row">
         <span class="s-label">
-          <span class="s-name">收藏的分辨率排在最前</span>
-          <span class="s-desc">关闭后列表恢复原始顺序，标星保留</span>
+          <span class="s-name">{{ $t('pinName') }}</span>
+          <span class="s-desc">{{ $t('pinDesc') }}</span>
         </span>
         <input
           type="checkbox"
@@ -27,18 +55,20 @@
       </label>
     </div>
 
-    <div class="section-label">已存方案</div>
+    <div class="section-label">{{ $t('groupSaved') }}</div>
     <div class="card s-card">
-      <div v-if="!rows.length" class="s-empty">还没有方案 · 回到面板保存当前配置</div>
+      <div v-if="!rows.length" class="s-empty">{{ $t('presetsEmpty') }}</div>
       <div v-for="r in rows" :key="r.p.name" class="s-row">
         <template v-if="renaming !== r.p.name">
           <div class="s-info">
             <span class="s-name">{{ r.p.name }}</span>
-            <span class="s-desc">{{ r.available ? r.p.desc : '显示器未接入' }}</span>
+            <span class="s-desc">{{ r.available ? r.p.desc : $t('presetsUnavailable') }}</span>
           </div>
           <div class="s-acts">
-            <button class="s-act" @click="startRename(r.p)">改名</button>
-            <button class="s-act s-act-del" @click="$emit('delete', r.p)">删除</button>
+            <button class="s-act" @click="startRename(r.p)">{{ $t('rename') }}</button>
+            <button class="s-act s-act-del" @click="$emit('delete', r.p)">
+              {{ $t('remove') }}
+            </button>
           </div>
         </template>
         <div v-else class="s-rename">
@@ -49,35 +79,36 @@
             @keyup.enter="commitRename(r.p)"
             @keyup.esc="renaming = null"
           />
-          <button class="s-act" @click="commitRename(r.p)">保存</button>
-          <button class="s-act" @click="renaming = null">取消</button>
+          <button class="s-act" @click="commitRename(r.p)">{{ $t('save') }}</button>
+          <button class="s-act" @click="renaming = null">{{ $t('cancel') }}</button>
         </div>
       </div>
     </div>
 
-    <div class="section-label">关于</div>
+    <div class="section-label">{{ $t('groupAbout') }}</div>
     <div class="card s-card about">
       <div class="a-row a-brand">
-        <img class="a-icon" :src="appIcon" alt="DisplaySwitch 图标" />
+        <img class="a-icon" :src="appIcon" alt="快切屏 DisplaySwitch 图标" />
         <div class="a-brand-text">
           <div class="a-brand-name">
-            <span class="a-name">DisplaySwitch</span>
+            <span class="a-name">快切屏</span>
+            <span class="a-en">DisplaySwitch</span>
             <span class="a-ver">v{{ version }}</span>
           </div>
-          <span class="a-desc">菜单栏里切换显示器角色（主显 / 镜像 / 扩展）与分辨率档位</span>
+          <span class="a-desc">{{ $t('aboutDesc') }}</span>
         </div>
       </div>
       <div class="a-row">
-        <span class="a-k">切换驱动</span>
-        <span class="a-v">内嵌 displayplacer（MIT 开源）</span>
+        <span class="a-k">{{ $t('aboutDriverKey') }}</span>
+        <span class="a-v">{{ $t('aboutDriverVal') }}</span>
       </div>
       <div class="a-row">
-        <span class="a-k">方案存放</span>
+        <span class="a-k">{{ $t('aboutPathKey') }}</span>
         <span class="a-v a-path">~/Library/Application Support/com.displayswitch.app/presets/</span>
       </div>
     </div>
 
-    <button class="s-quit" @click="$emit('quit')">退出 DisplaySwitch</button>
+    <button class="s-quit" @click="$emit('quit')">{{ $t('quitApp') }}</button>
   </div>
 </template>
 
@@ -91,9 +122,10 @@ export default {
     presets: { type: Array, required: true },
     present: { type: Array, required: true },
     pinFavorites: { type: Boolean, default: true },
-    autostart: { type: Boolean, default: false }
+    autostart: { type: Boolean, default: false },
+    langPref: { type: String, default: 'auto' }
   },
-  emits: ['delete', 'rename', 'set-pin', 'set-autostart', 'quit'],
+  emits: ['delete', 'rename', 'set-pin', 'set-autostart', 'set-lang', 'quit'],
   data() {
     return {
       version,
@@ -276,6 +308,35 @@ export default {
   outline-offset: 2px;
 }
 
+/* 三态语言偏好（跟随系统 / 简体中文 / English）用分段按钮，和主界面的角色按钮同一套视觉 */
+.s-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.s-seg-btn {
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.s-seg-btn:hover {
+  color: var(--text-1);
+}
+
+.s-seg-btn.on {
+  background: var(--card);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.14);
+}
+
 .s-rename {
   display: flex;
   align-items: center;
@@ -336,12 +397,17 @@ export default {
 .a-brand-name {
   display: flex;
   align-items: baseline;
-  gap: 7px;
+  gap: 6px;
 }
 
 .a-name {
   font-size: 14px;
   font-weight: 600;
+}
+
+.a-en {
+  font-size: 11.5px;
+  color: var(--text-2);
 }
 
 .a-desc {
@@ -358,7 +424,7 @@ export default {
 .a-k {
   font-size: 11.5px;
   color: var(--text-2);
-  width: 56px;
+  width: 66px;
   flex-shrink: 0;
 }
 

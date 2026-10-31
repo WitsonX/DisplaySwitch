@@ -1,3 +1,4 @@
+use crate::lang;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::process::Command;
@@ -41,7 +42,13 @@ fn run_displayplacer(program: &str, args: &[&str]) -> Result<String, String> {
     let out = Command::new(program)
         .args(args)
         .output()
-        .map_err(|e| format!("无法运行 displayplacer：{e}"))?;
+        .map_err(|e| {
+            lang::tr_fill(
+                "无法运行 displayplacer：{e}",
+                "Could not run displayplacer: {e}",
+                &[("e", &e)],
+            )
+        })?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -199,7 +206,11 @@ pub fn parse_output(out: &str) -> Result<AppState, String> {
     }
 
     if displays.is_empty() {
-        return Err("displayplacer 未返回任何显示器".to_string());
+        return Err(lang::tr(
+            "displayplacer 未返回任何显示器",
+            "displayplacer returned no displays",
+        )
+        .to_string());
     }
 
     // 镜像组解析：末尾建议命令的 id token 形如 id:主+从1+从2，可同时存在多组

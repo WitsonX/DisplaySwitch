@@ -15,9 +15,9 @@
           >
             <path d="M15 18l-6-6 6-6" />
           </svg>
-          返回
+          {{ $t('back') }}
         </button>
-        <div class="title title-sub">设置</div>
+        <div class="title title-sub">{{ $t('settings') }}</div>
         <span class="head-spacer" />
       </template>
       <template v-else>
@@ -41,10 +41,10 @@
             <rect x="6.2" y="6.6" width="10.4" height="7.4" rx="1.6" />
             <path d="M11.4 14v2.2M9.6 16.2h3.6" />
           </svg>
-          显示器
+          <span>{{ $t('titleDisplays') }}</span>
         </div>
         <span v-if="statusText" class="status-pill">{{ statusText }}</span>
-        <button class="gear-btn" title="设置" @click="view = 'settings'">
+        <button class="gear-btn" :title="$t('settings')" @click="view = 'settings'">
           <svg
             width="15"
             height="15"
@@ -62,31 +62,33 @@
           </svg>
         </button>
       </template>
-      <button class="close-btn" title="关闭" @click="closePanel">✕</button>
+      <button class="close-btn" :title="$t('close')" @click="closePanel">✕</button>
     </header>
 
     <SettingsPanel
       v-if="view === 'settings'"
-      :presets="allPresets"
+      :presets="describedPresets"
       :present="presentIds"
       :pin-favorites="pinFavorites"
       :autostart="autostart"
+      :lang-pref="langPref"
       @delete="removePreset"
       @rename="renamePreset"
       @set-pin="setPin"
       @set-autostart="changeAutostart"
+      @set-lang="changeLang"
       @quit="quitApp"
     />
 
     <div v-else-if="error" class="error-box">
       <p class="error-text">{{ error }}</p>
-      <button class="retry-btn" @click="load">重试</button>
+      <button class="retry-btn" @click="load">{{ $t('retry') }}</button>
     </div>
 
     <div v-else class="panel-body" :class="{ single: isSingle }">
       <div class="cols">
         <div class="col col-left">
-          <div class="section-label">显示器</div>
+          <div class="section-label">{{ $t('titleDisplays') }}</div>
           <DisplayList
             :displays="enriched"
             :selected-id="isSingle ? '' : selectedId"
@@ -96,7 +98,7 @@
           />
         </div>
         <div v-if="!isSingle" class="col col-right">
-          <div class="section-label">分辨率</div>
+          <div class="section-label">{{ $t('titleResolutions') }}</div>
           <ResolutionPanel
             :display="selectedDisplay"
             :favorites="favList(selectedDisplay)"
@@ -108,7 +110,7 @@
       </div>
 
       <template v-if="isSingle && displays.length === 1">
-        <div class="section-label single-label">分辨率</div>
+        <div class="section-label single-label">{{ $t('titleResolutions') }}</div>
         <ResolutionPanel
           :display="enriched[0]"
           :show-head="false"
@@ -120,19 +122,19 @@
       </template>
 
       <div class="preset-area">
-        <div class="section-label">场景预设</div>
+        <div class="section-label">{{ $t('titlePresets') }}</div>
         <div v-if="saving" class="save-box">
           <input
             ref="saveInput"
             :value="newPresetName"
             class="save-input"
-            placeholder="预设名称，如：工位-扩展"
+            :placeholder="$t('presetPlaceholder')"
             @input="newPresetName = $event.target.value"
             @keyup.enter="savePreset"
             @keyup.esc="cancelSave"
           />
-          <button class="save-ok" @click="savePreset">保存</button>
-          <button class="save-cancel" @click="cancelSave">取消</button>
+          <button class="save-ok" @click="savePreset">{{ $t('save') }}</button>
+          <button class="save-cancel" @click="cancelSave">{{ $t('cancel') }}</button>
         </div>
         <div v-else class="preset-bar">
           <button
@@ -146,12 +148,12 @@
             @blur="hideTip"
             >{{ p.name }}</button
           >
-          <button class="preset-pill preset-save" @click="toggleSave">+ 保存当前配置…</button>
+          <button class="preset-pill preset-save" @click="toggleSave">{{ $t('savePresetBtn') }}</button>
           <div v-if="tip" class="preset-tip" :style="{ left: tip.left + 'px' }">
             {{ tip.desc }}
           </div>
         </div>
-        <div v-if="isMock" class="mock-note">浏览器预览 · 假数据 · 未接入真实切换</div>
+        <div v-if="isMock" class="mock-note">{{ $t('mockNote') }}</div>
       </div>
     </div>
 
@@ -165,6 +167,7 @@ import ResolutionPanel from './components/ResolutionPanel.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import Toast from './components/Toast.vue'
 import * as api from './api'
+import { i18n, t, shortName, setLangPref } from './i18n'
 
 export default {
   name: 'App',
@@ -188,16 +191,25 @@ export default {
     }
   },
   computed: {
+    langPref() {
+      return i18n.pref
+    },
     isSingle() {
       return this.displays.length <= 1
     },
     presentIds() {
       return this.displays.map((d) => d.id)
     },
+    // 预设描述每次渲染现算，切换语言后不用重新读盘就能跟着变
+    describedPresets() {
+      return this.allPresets.map((p) => ({ ...p, desc: this.descOf(p.config) }))
+    },
     presets() {
       const present = new Set(this.presentIds)
       // 方案记录的显示器没全插上就不出现，避免应用出半套配置
-      return this.allPresets.filter((p) => p.config.displays.every((d) => present.has(d.ctx_id)))
+      return this.describedPresets.filter((p) =>
+        p.config.displays.every((d) => present.has(d.ctx_id))
+      )
     },
     letterMap() {
       const letters = {}
@@ -217,7 +229,7 @@ export default {
         const target = d.mirrorOf ? this.displays.find((x) => x.id === d.mirrorOf) : null
         const subText =
           role === 'mirror' && target
-            ? `跟随 ${shortName(target.name)} · ${pretty(target.current)}`
+            ? t('follows', { name: shortName(target.name), res: pretty(target.current) })
             : `${pretty(d.current)}${d.hz ? ` · ${d.hz}Hz` : ''}`
         return {
           ...d,
@@ -236,14 +248,12 @@ export default {
     statusText() {
       if (!this.displays.length) return ''
       if (this.displays.length === 1) {
-        return `单屏 · ${pretty(this.displays[0].current)}`
+        return t('statusSingle', { res: pretty(this.displays[0].current) })
       }
       const main = this.displays.find((d) => d.main) || this.displays[0]
       const mirrors = this.displays.filter((d) => d.mirrorOf).length
-      return (
-        `${this.displays.length}屏 · 主 ${shortName(main.name)}` +
-        (mirrors ? ` · ${mirrors}屏镜像` : '')
-      )
+      const base = t('statusMulti', { count: this.displays.length, name: shortName(main.name) })
+      return mirrors ? base + t('statusMirrors', { n: mirrors }) : base
     }
   },
   watch: {
@@ -270,40 +280,47 @@ export default {
   },
   methods: {
     roleOptionsFor(d) {
-      const opts = [{ value: 'main', label: '主显示器' }]
+      const opts = [{ value: 'main', label: t('roleMain') }]
       for (const o of this.displays) {
         if (o.id === d.id || o.mirrorOf) continue
         opts.push({
           value: `mirror:${o.id}`,
-          label: `与 ${shortName(o.name)} [${this.letterMap[o.id]}] 镜像`
+          label: t('mirrorWith', { name: shortName(o.name), letter: this.letterMap[o.id] })
         })
       }
-      opts.push({ value: 'extend', label: '扩展显示器' })
+      opts.push({ value: 'extend', label: t('roleExtend') })
       return opts
     },
     async load() {
       this.error = null
       try {
+        // 先取设置：语言决定显示器通用名和档位标签，读状态前必须定下来
+        this.applySettings(await api.getSettings())
         const state = await api.getState()
         this.displays = state.displays
         if (!this.displays.some((d) => d.id === this.selectedId)) {
           const main = this.displays.find((d) => d.main)
           this.selectedId = main ? main.id : (this.displays[0] && this.displays[0].id) || ''
         }
-        this.applySettings(await api.getSettings())
-        const saved = await api.listPresets()
-        this.allPresets = saved.map((p) => ({
-          name: p.name,
-          desc: this.descOf(p.config),
-          config: p.config
-        }))
+        this.allPresets = (await api.listPresets()).map((p) => ({ name: p.name, config: p.config }))
       } catch (e) {
-        this.error = `无法读取显示器状态：${e}`
+        this.error = t('loadError', { e })
       }
     },
     applySettings(s) {
       this.favorites = s.favorites || {}
       this.pinFavorites = s.pinFavorites !== false
+      setLangPref(s.lang || 'auto')
+    },
+    async changeLang(pref) {
+      if (pref === i18n.pref) return
+      try {
+        setLangPref(pref)
+        this.applySettings(await api.setLang(pref))
+        await this.load()
+      } catch (e) {
+        this.showToast(t('langError', { e }))
+      }
     },
     favList(display) {
       return (display && this.favorites[display.id]) || []
@@ -313,29 +330,30 @@ export default {
       try {
         this.applySettings(await api.toggleFavorite(display.id, m.id))
       } catch (e) {
-        this.showToast(`收藏失败：${e}`)
+        this.showToast(t('favError', { e }))
       }
     },
     async setPin(pin) {
       try {
         this.applySettings(await api.setPinFavorites(pin))
       } catch (e) {
-        this.showToast(`设置失败：${e}`)
+        this.showToast(t('setPinError', { e }))
       }
     },
     async refreshAutostart() {
       try {
         this.autostart = await api.getAutostart()
       } catch (e) {
-        this.showToast(`读取自启动状态失败：${e}`)
+        this.showToast(t('autostartReadError', { e }))
       }
     },
     async changeAutostart(enabled) {
       try {
         this.autostart = await api.setAutostart(enabled)
-        if (this.isMock) this.showToast(enabled ? '已设为登录自启动（演示）' : '已取消登录自启动（演示）')
+        if (this.isMock)
+          this.showToast(enabled ? t('autostartOnDemo') : t('autostartOffDemo'))
       } catch (e) {
-        this.showToast(`自启动设置失败：${e}`)
+        this.showToast(t('autostartSetError', { e }))
         // 先承认复选框当前显示的样子，再回读真实值，否则失败时勾会停在错的位置
         this.autostart = enabled
         await this.$nextTick()
@@ -384,8 +402,8 @@ export default {
       const mirrors = config.displays.filter((d) => d.role === 'mirror').length
       const name = main ? this.displays.find((d) => d.id === main.ctx_id)?.name : null
       const resText = main ? pretty(main.res) : '?'
-      const parts = [name ? `${shortName(name)}为主` : '自定义主屏']
-      if (mirrors) parts.push(`${mirrors}屏镜像`)
+      const parts = [name ? t('descMainIs', { name: shortName(name) }) : t('descCustomMain')]
+      if (mirrors) parts.push(t('descMirrors', { n: mirrors }))
       parts.push(resText)
       return parts.join(' · ')
     },
@@ -400,9 +418,9 @@ export default {
     async pushDraft(draft, okMsg) {
       try {
         await api.applyConfig(this.draftToConfig(draft))
-        this.showToast(this.isMock ? `${okMsg}（演示）` : okMsg)
+        this.showToast(this.isMock ? `${okMsg}${t('demoSuffix')}` : okMsg)
       } catch (e) {
-        this.showToast(`切换失败：${e}`)
+        this.showToast(t('applyError', { e }))
       }
       await this.load()
     },
@@ -451,15 +469,19 @@ export default {
         me.target = t
       }
       const label =
-        val === 'main' ? '主显示器' : val === 'extend' ? '扩展显示器' : '镜像屏'
-      this.pushDraft(draft, `已把 ${d.name} 设为${label}`)
+        val === 'main'
+          ? t('roleLabelMain')
+          : val === 'extend'
+            ? t('roleLabelExtend')
+            : t('roleLabelMirror')
+      this.pushDraft(draft, t('roleSet', { name: d.name, label }))
     },
     applyRes(display, m) {
       const draft = this.toDraft()
       const me = draft.find((x) => x.id === display.id)
       me.res = m.id
       me.scaling = m.scaling !== undefined ? m.scaling : me.scaling
-      this.pushDraft(draft, `已切换 ${display.name} 到 ${m.label}`)
+      this.pushDraft(draft, t('resSet', { name: display.name, label: m.label }))
     },
     showTip(p, e) {
       const el = e.currentTarget
@@ -476,19 +498,19 @@ export default {
     async applyPreset(p) {
       try {
         await api.applyConfig(p.config)
-        this.showToast(`已应用「${p.name}」`)
+        this.showToast(t('presetApplied', { name: p.name }))
         await this.load()
       } catch (e) {
-        this.showToast(`应用失败：${e}`)
+        this.showToast(t('presetApplyError', { e }))
       }
     },
     async removePreset(p) {
       try {
         await api.deletePreset(p.name)
-        this.showToast(`已删除「${p.name}」`)
+        this.showToast(t('presetDeleted', { name: p.name }))
         await this.load()
       } catch (e) {
-        this.showToast(`删除失败：${e}`)
+        this.showToast(t('presetDeleteError', { e }))
       }
     },
     async renamePreset(p, newName) {
@@ -497,10 +519,10 @@ export default {
       try {
         await api.savePreset(name, p.config)
         await api.deletePreset(p.name)
-        this.showToast(`已改名为「${name}」`)
+        this.showToast(t('presetRenamed', { name }))
         await this.load()
       } catch (e) {
-        this.showToast(`改名失败：${e}`)
+        this.showToast(t('presetRenameError', { e }))
       }
     },
     toggleSave() {
@@ -518,17 +540,17 @@ export default {
     async savePreset() {
       const name = this.newPresetName.trim()
       if (!name) {
-        this.showToast('请输入预设名称')
+        this.showToast(t('presetNameRequired'))
         return
       }
       try {
         await api.savePreset(name, this.draftToConfig(this.toDraft()))
         this.saving = false
         this.newPresetName = ''
-        this.showToast(`已保存「${name}」`)
+        this.showToast(t('presetSaved', { name }))
         await this.load()
       } catch (e) {
-        this.showToast(`保存失败：${e}`)
+        this.showToast(t('presetSaveError', { e }))
       }
     },
     async closePanel() {
@@ -540,18 +562,18 @@ export default {
           /* 忽略 */
         }
       } else {
-        this.showToast('演示：关闭面板')
+        this.showToast(t('demoClose'))
       }
     },
     async quitApp() {
       if (!api.isTauri) {
-        this.showToast('演示：退出应用')
+        this.showToast(t('demoQuit'))
         return
       }
       try {
         await api.quitApp()
       } catch {
-        this.showToast('退出失败')
+        this.showToast(t('quitError'))
       }
     }
   }
@@ -559,10 +581,6 @@ export default {
 
 function pretty(res) {
   return res.replace('x', '×')
-}
-
-function shortName(name) {
-  return name.replace('显示器', '').trim()
 }
 </script>
 

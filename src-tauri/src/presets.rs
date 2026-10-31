@@ -1,3 +1,4 @@
+use crate::lang;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -109,9 +110,21 @@ fn presets_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_config_dir()
-        .map_err(|e| format!("无法定位配置目录：{e}"))?
+        .map_err(|e| {
+            lang::tr_fill(
+                "无法定位配置目录：{e}",
+                "Cannot find the config folder: {e}",
+                &[("e", &e)],
+            )
+        })?
         .join(PRESET_DIR);
-    fs::create_dir_all(&dir).map_err(|e| format!("无法创建预设目录：{e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| {
+        lang::tr_fill(
+            "无法创建预设目录：{e}",
+            "Could not create the setups folder: {e}",
+            &[("e", &e)],
+        )
+    })?;
     Ok(dir)
 }
 
@@ -122,7 +135,7 @@ fn sanitize_name(name: &str) -> String {
         .collect();
     let trimmed = cleaned.trim().to_string();
     if trimmed.is_empty() {
-        "未命名".to_string()
+        lang::tr("未命名", "Untitled").to_string()
     } else {
         trimmed
     }
@@ -130,26 +143,56 @@ fn sanitize_name(name: &str) -> String {
 
 pub fn save_preset(app: &AppHandle, name: &str, config: &ApplyConfig) -> Result<(), String> {
     let path = presets_dir(app)?.join(format!("{}.json", sanitize_name(name)));
-    let json = serde_json::to_string_pretty(config).map_err(|e| format!("序列化失败：{e}"))?;
-    fs::write(&path, json).map_err(|e| format!("写入预设失败：{e}"))
+    let json = serde_json::to_string_pretty(config).map_err(|e| {
+        lang::tr_fill(
+            "序列化失败：{e}",
+            "Could not encode the setup: {e}",
+            &[("e", &e)],
+        )
+    })?;
+    fs::write(&path, json).map_err(|e| {
+        lang::tr_fill(
+            "写入预设失败：{e}",
+            "Could not save the setup: {e}",
+            &[("e", &e)],
+        )
+    })
 }
 
 pub fn list_presets(app: &AppHandle) -> Result<Vec<PresetEntry>, String> {
     let dir = presets_dir(app)?;
     let mut out = Vec::new();
-    for entry in fs::read_dir(&dir).map_err(|e| format!("读取预设目录失败：{e}"))? {
-        let path = entry.map_err(|e| format!("读取预设目录失败：{e}"))?.path();
+    let read_err = || {
+        lang::tr(
+            "读取预设目录失败",
+            "Could not read the setups folder",
+        )
+        .to_string()
+    };
+    for entry in fs::read_dir(&dir).map_err(|_| read_err())? {
+        let path = entry.map_err(|_| read_err())?.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
             continue;
         }
         let name = path
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("未命名")
+            .unwrap_or_else(|| lang::tr("未命名", "Untitled"))
             .to_string();
-        let text = fs::read_to_string(&path).map_err(|e| format!("读取预设 {name} 失败：{e}"))?;
-        let config: ApplyConfig =
-            serde_json::from_str(&text).map_err(|e| format!("解析预设 {name} 失败：{e}"))?;
+        let text = fs::read_to_string(&path).map_err(|e| {
+            lang::tr_fill(
+                "读取预设 {name} 失败：{e}",
+                "Could not read setup {name}: {e}",
+                &[("name", &name), ("e", &e)],
+            )
+        })?;
+        let config: ApplyConfig = serde_json::from_str(&text).map_err(|e| {
+            lang::tr_fill(
+                "解析预设 {name} 失败：{e}",
+                "Could not parse setup {name}: {e}",
+                &[("name", &name), ("e", &e)],
+            )
+        })?;
         out.push(PresetEntry { name, config });
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -159,7 +202,13 @@ pub fn list_presets(app: &AppHandle) -> Result<Vec<PresetEntry>, String> {
 pub fn delete_preset(app: &AppHandle, name: &str) -> Result<(), String> {
     let path = presets_dir(app)?.join(format!("{}.json", sanitize_name(name)));
     if path.exists() {
-        fs::remove_file(&path).map_err(|e| format!("删除预设失败：{e}"))?;
+        fs::remove_file(&path).map_err(|e| {
+            lang::tr_fill(
+                "删除预设失败：{e}",
+                "Could not delete the setup: {e}",
+                &[("e", &e)],
+            )
+        })?;
     }
     Ok(())
 }

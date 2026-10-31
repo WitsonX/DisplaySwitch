@@ -1,3 +1,4 @@
+mod lang;
 mod presets;
 mod settings;
 mod state;
@@ -103,24 +104,40 @@ fn spec_width(res: &str) -> i32 {
 // （displayplacer 借此设置系统主屏），其余组按宽度从左到右排开避免重叠。
 fn build_specs(config: &ApplyConfig) -> Result<Vec<String>, String> {
     if config.displays.is_empty() {
-        return Err("显示器列表为空".to_string());
+        return Err(lang::tr("显示器列表为空", "The display list is empty").to_string());
     }
     let main_count = config.displays.iter().filter(|d| d.role == "main").count();
     if main_count != 1 {
-        return Err(format!("必须且只能有一个主显示器（当前 {main_count} 个）"));
+        return Err(lang::tr_fill(
+            "必须且只能有一个主显示器（当前 {n} 个）",
+            "Exactly one main display is required (found {n})",
+            &[("n", &main_count)],
+        ));
     }
     for d in &config.displays {
         if d.role != "mirror" {
             continue;
         }
         let Some(t) = &d.mirror_target else {
-            return Err(format!("镜像屏 {} 缺少镜像目标", d.ctx_id));
+            return Err(lang::tr_fill(
+                "镜像屏 {id} 缺少镜像目标",
+                "Mirrored display {id} has no mirror target",
+                &[("id", &d.ctx_id)],
+            ));
         };
         let Some(target) = config.displays.iter().find(|x| &x.ctx_id == t) else {
-            return Err("镜像目标不在显示器列表中".to_string());
+            return Err(lang::tr(
+                "镜像目标不在显示器列表中",
+                "The mirror target is not in the display list",
+            )
+            .to_string());
         };
         if target.role == "mirror" {
-            return Err("镜像目标不能自己也是镜像屏".to_string());
+            return Err(lang::tr(
+                "镜像目标不能自己也是镜像屏",
+                "A mirror target cannot be mirrored itself",
+            )
+            .to_string());
         }
     }
 
@@ -152,7 +169,13 @@ fn run_apply(program: &str, specs: &[String]) -> Result<(), String> {
     let out = Command::new(program)
         .args(specs)
         .output()
-        .map_err(|e| format!("无法运行 displayplacer：{e}"))?;
+        .map_err(|e| {
+            lang::tr_fill(
+                "无法运行 displayplacer：{e}",
+                "Could not run displayplacer: {e}",
+                &[("e", &e)],
+            )
+        })?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -199,6 +222,16 @@ fn set_pin_favorites(app: AppHandle, pin: bool) -> Result<settings::AppSettings,
     settings::set_pin_favorites(&app, pin)
 }
 
+// 语言存下来后，托盘菜单是原生控件、不会跟着网页重渲染，必须就地重建
+#[tauri::command]
+fn set_lang(app: AppHandle, lang: String) -> Result<settings::AppSettings, String> {
+    let saved = settings::set_lang(&app, lang)?;
+    // 存的是偏好，生效值还要把 auto 展开成系统语言，缓存与菜单都按生效值构建
+    crate::lang::set_active(&settings::effective_lang(&app));
+    sync_tray_menu(&app);
+    Ok(saved)
+}
+
 #[tauri::command]
 fn hide_panel(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
@@ -232,6 +265,35 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
         manager.disable().map_err(|e| e.to_string())?;
     }
     manager.is_enabled().map_err(|e| e.to_string())
+}
+
+// 托盘右键菜单：文案按当前界面语言取，语言变了要重新构建一份
+fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let show = MenuItem::with_id(
+        app,
+        "show",
+        lang::tr("显示面板", "Show Panel"),
+        true,
+        None::<&str>,
+    )?;
+    let settings = MenuItem::with_id(
+        app,
+        "settings",
+        lang::tr("设置…", "Settings…"),
+        true,
+        None::<&str>,
+    )?;
+    let quit = MenuItem::with_id(app, "quit", lang::tr("退出", "Quit"), true, None::<&str>)?;
+    Menu::with_items(app, &[&show, &settings, &quit])
+}
+
+fn sync_tray_menu(app: &AppHandle) {
+    let Some(tray) = app.tray_by_id("main-tray") else {
+        return;
+    };
+    if let Ok(menu) = tray_menu(app) {
+        let _ = tray.set_menu(Some(menu));
+    }
 }
 
 fn show_panel(app: &AppHandle, view: &str) {
@@ -300,10 +362,9 @@ pub fn run() {
                 }
             }
 
-            let show = MenuItem::with_id(app, "show", "显示面板", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &settings, &quit])?;
+            // 原生侧文案先定语言，再建菜单
+            lang::set_active(&settings::effective_lang(app.handle()));
+            let menu = tray_menu(app.handle())?;
 
             // 菜单栏用单色模板 glyph（tools/gen_icons.swift 生成）：template 模式会按菜单栏
             // 深浅自动着色，彩色 App 图标在深色菜单栏下会整块糊进去
@@ -351,6 +412,7 @@ pub fn run() {
             get_settings,
             toggle_favorite,
             set_pin_favorites,
+            set_lang,
             hide_panel,
             quit_app,
             get_autostart,

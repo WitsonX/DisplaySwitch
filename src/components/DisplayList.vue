@@ -39,17 +39,17 @@
           <span v-if="d.sizeIn" class="d-size">{{ d.sizeIn }}″</span>
           <div v-if="showRole && !useSelect" class="role-seg" @click.stop>
             <button class="seg" :class="{ on: d.role === 'main' }" @click="setRole(d, 'main')">
-              主显
+              {{ $t('roleMainSeg') }}
             </button>
             <button
               class="seg"
               :class="{ on: d.role === 'mirror' }"
               @click="toggleMirror(d)"
             >
-              镜像
+              {{ $t('roleMirrorSeg') }}
             </button>
             <button class="seg" :class="{ on: d.role === 'extend' }" @click="setRole(d, 'extend')">
-              扩展
+              {{ $t('roleExtendSeg') }}
             </button>
             <div v-if="menuFor === d.id" class="mirror-menu">
               <button
@@ -58,7 +58,7 @@
                 class="menu-item"
                 @click="pickMirror(d, t)"
               >
-                与 {{ short(t.name) }} [{{ t.letter }}] 镜像
+                {{ $t('mirrorWith', { name: short(t.name), letter: t.letter }) }}
               </button>
             </div>
           </div>
@@ -74,14 +74,14 @@
               {{ opt.label }}
             </option>
           </select>
-          <span v-else class="role-static">主显示器</span>
+          <span v-else class="role-static">{{ $t('roleMain') }}</span>
         </div>
         <div class="d-line2">
           <span
             v-if="!isSingle"
             class="gfx"
             :class="{ 'gfx-mirror': d.role === 'mirror' }"
-            :title="d.role === 'mirror' ? `内容与 ${d.mirrorTargetName} 相同` : '这块屏显示的内容'"
+            :title="d.role === 'mirror' ? $t('gfxSameAs', { name: d.mirrorTargetName }) : $t('gfxContent')"
             >{{ d.letter }}</span
           >
           <span class="d-sub">{{ d.subText }}</span>
@@ -92,6 +92,8 @@
 </template>
 
 <script>
+import { shortName } from '../i18n'
+
 export default {
   name: 'DisplayList',
   props: {
@@ -117,7 +119,7 @@ export default {
       return d.role === 'mirror' ? `mirror:${d.mirrorOf}` : d.role
     },
     short(name) {
-      return (name || '').replace('显示器', '')
+      return shortName(name)
     },
     mirrorTargets(d) {
       return this.displays.filter((o) => o.id !== d.id && o.role !== 'mirror')

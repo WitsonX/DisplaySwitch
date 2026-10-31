@@ -3,9 +3,13 @@
     <div v-if="display && display.role === 'mirror'" class="mirror-note">
       <span class="gfx gfx-mirror">{{ display.letter }}</span>
       <span class="note-text">
-        {{ display.name }} 与 {{ display.mirrorTargetName }} 镜像，分辨率由
-        {{ display.mirrorTargetName }} 决定（当前 {{ pretty(display.mirrorTargetRes) }}）。要改分辨率，请选中
-        {{ display.mirrorTargetName }}。
+        {{
+          $t('mirrorNote', {
+            name: display.name,
+            target: display.mirrorTargetName,
+            res: pretty(display.mirrorTargetRes)
+          })
+        }}
       </span>
     </div>
     <template v-else-if="display">
@@ -43,7 +47,7 @@
             class="res-star"
             :class="{ on: isFav(m) }"
             :aria-pressed="isFav(m) ? 'true' : 'false'"
-            :title="isFav(m) ? '取消收藏' : '收藏该分辨率'"
+            :title="isFav(m) ? $t('unfavRes') : $t('favRes')"
             @click.stop="$emit('toggle-fav', m)"
             @keyup.enter.stop.prevent="$emit('toggle-fav', m)"
           >

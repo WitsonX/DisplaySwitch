@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { t } from './i18n'
 
 export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
@@ -17,10 +18,10 @@ function normalizeState(s) {
     const builtin = /built in/i.test(d.type_str)
     let name
     if (builtin) {
-      name = '内建显示器'
+      name = t('nameBuiltin')
     } else if (/external/i.test(d.type_str)) {
       const idx = externals.indexOf(d)
-      name = externals.length > 1 ? `外接显示器 ${idx + 1}` : '外接显示器'
+      name = externals.length > 1 ? t('nameExternalN', { n: idx + 1 }) : t('nameExternal')
     } else {
       name = d.type_str
     }
@@ -36,7 +37,7 @@ function normalizeState(s) {
           id: m.res,
           label: prettyRes(m.res),
           scaling: m.scaling,
-          tag: w === maxWidth ? '原生' : undefined
+          tag: w === maxWidth ? t('nativeTag') : undefined
         }
       }),
       hz: d.hz,
@@ -167,7 +168,7 @@ export async function deletePreset(name) {
   if (i >= 0) mockPresets.splice(i, 1)
 }
 
-const mockSettings = { favorites: {}, pinFavorites: true, autostart: false }
+const mockSettings = { favorites: {}, pinFavorites: true, autostart: false, lang: 'auto' }
 
 export async function getSettings() {
   if (isTauri) return invoke('get_settings')
@@ -187,6 +188,12 @@ export async function toggleFavorite(displayId, res) {
 export async function setPinFavorites(pin) {
   if (isTauri) return invoke('set_pin_favorites', { pin })
   mockSettings.pinFavorites = pin
+  return JSON.parse(JSON.stringify(mockSettings))
+}
+
+export async function setLang(lang) {
+  if (isTauri) return invoke('set_lang', { lang })
+  mockSettings.lang = lang
   return JSON.parse(JSON.stringify(mockSettings))
 }
 
