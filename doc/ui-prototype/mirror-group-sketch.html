@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>草图 · 方案一 镜像组模型（独立/跟随）</title>
+<style>
+html{color-scheme:light dark}
+body{margin:0;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;background:light-dark(#e8e8ed,#111114)}
+</style>
+</head>
+<body>
+<div id="ds-sketch">
+<style>
+#ds-sketch{
+  color-scheme:light dark;
+  --bg:light-dark(#f5f5f7,#1c1c1e);
+  --card:light-dark(#ffffff,#2a2a2c);
+  --t1:light-dark(#1d1d1f,#f2f2f4);
+  --t2:light-dark(#86868b,#98989e);
+  --div:light-dark(rgba(0,0,0,.06),rgba(255,255,255,.08));
+  --acc:light-dark(#0a84ff,#5aa8ff);
+  --accs:light-dark(rgba(10,132,255,.12),rgba(90,168,255,.18));
+  --fill:light-dark(rgba(0,0,0,.05),rgba(255,255,255,.08));
+  font-family:var(--font-sans,-apple-system,"PingFang SC","Helvetica Neue",sans-serif);
+  font-size:13px;
+  color:var(--t1);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:14px;
+}
+#ds-sketch .sk-panel{width:336px;max-width:100%;background:var(--bg);border-radius:16px;box-shadow:light-dark(0 12px 40px rgba(0,0,0,.16),0 12px 40px rgba(0,0,0,.5));overflow:hidden;}
+#ds-sketch .sk-header{display:flex;align-items:center;gap:8px;padding:14px 16px 10px;}
+#ds-sketch .sk-title{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;}
+#ds-sketch .sk-title svg{width:15px;height:15px;}
+#ds-sketch .sk-pill{margin-left:auto;font-size:11px;color:var(--t2);background:var(--fill);padding:3px 9px;border-radius:999px;white-space:nowrap;}
+#ds-sketch .sk-body{padding:0 12px 14px;display:flex;flex-direction:column;gap:10px;}
+#ds-sketch .sk-label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t2);padding:0 4px;}
+#ds-sketch .sk-hint{margin-left:auto;font-size:11px;}
+#ds-sketch .sk-dot{display:inline-flex;align-items:center;justify-content:center;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--acc);color:#fff;font-size:10px;font-weight:500;flex:none;}
+#ds-sketch .sk-card{background:var(--card);border-radius:12px;}
+#ds-sketch .sk-row{display:flex;gap:10px;padding:10px 12px;}
+#ds-sketch .sk-bt{border-top:1px solid var(--div);}
+#ds-sketch .sk-row-icon{width:30px;height:30px;border-radius:8px;background:var(--fill);display:flex;align-items:center;justify-content:center;flex:none;color:var(--t1);}
+#ds-sketch .sk-row-icon svg{width:17px;height:17px;}
+#ds-sketch .sk-row-main{flex:1;min-width:0;}
+#ds-sketch .sk-row-title{font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+#ds-sketch .sk-badge{font-size:10px;color:var(--t2);background:var(--fill);padding:1.5px 7px;border-radius:999px;font-weight:400;}
+#ds-sketch .sk-badge-pri{color:var(--acc);background:var(--accs);}
+#ds-sketch .sk-row-sub{font-size:11px;color:var(--t2);margin-top:2px;}
+#ds-sketch .sk-chips{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap;}
+#ds-sketch .sk-chip{font-size:11px;padding:4px 10px;border-radius:999px;background:var(--fill);color:var(--t2);border:none;cursor:pointer;font-family:inherit;}
+#ds-sketch .sk-chip-on{background:var(--accs);color:var(--acc);font-weight:500;}
+#ds-sketch .sk-segfull{display:flex;background:var(--fill);border-radius:9px;padding:2px;}
+#ds-sketch .sk-segfull button{flex:1;padding:5px 0;border:none;border-radius:7px;background:transparent;font-size:12px;color:var(--t1);cursor:pointer;font-family:inherit;}
+#ds-sketch .sk-gseg{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+#ds-sketch .sk-gtab{font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid var(--div);background:var(--card);color:var(--t2);cursor:pointer;font-family:inherit;}
+#ds-sketch .sk-gtab-on{border-color:var(--acc);background:var(--accs);color:var(--acc);font-weight:500;}
+#ds-sketch .sk-gnote{font-size:11px;color:var(--t2);padding:0 4px;}
+#ds-sketch .sk-reslist{max-height:198px;overflow-y:auto;}
+#ds-sketch .sk-res-row{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:none;background:transparent;font-size:12px;color:var(--t1);cursor:pointer;font-family:inherit;text-align:left;}
+#ds-sketch .sk-res-row + .sk-res-row{border-top:1px solid var(--div);}
+#ds-sketch .sk-res-val{font-variant-numeric:tabular-nums;}
+#ds-sketch .sk-res-tag{font-size:10px;color:var(--t2);background:var(--fill);padding:1px 6px;border-radius:999px;}
+#ds-sketch .sk-res-check{width:14px;height:14px;margin-left:auto;color:var(--acc);opacity:0;flex:none;}
+#ds-sketch .sk-res-cur .sk-res-check{opacity:1;}
+#ds-sketch .sk-res-cur .sk-res-val{color:var(--acc);font-weight:500;}
+#ds-sketch .sk-prow{display:flex;align-items:center;gap:10px;padding:10px 12px;}
+#ds-sketch .sk-apply{margin-left:auto;font-size:11px;padding:4px 12px;border-radius:999px;border:none;background:var(--accs);color:var(--acc);font-weight:500;cursor:pointer;font-family:inherit;flex:none;}
+#ds-sketch .sk-legend{width:336px;max-width:100%;display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--t2);line-height:1.5;}
+#ds-sketch .sk-legend p{margin:0;display:flex;gap:7px;align-items:flex-start;}
+#ds-sketch .sk-legend .sk-dot{margin-top:2px;}
+#ds-sketch .sk-legend-tip{color:var(--acc);}
+</style>
+
+<div class="sk-panel">
+  <header class="sk-header">
+    <div class="sk-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="11.5" rx="1.5"/><path d="M9 20h6M12 16v4"/></svg>显示器</div>
+    <div class="sk-pill" id="sk-pill" aria-live="polite"></div>
+  </header>
+  <div class="sk-body">
+    <div class="sk-label">显示器<span class="sk-dot">1</span></div>
+    <div class="sk-card" id="sk-rows"></div>
+
+    <div class="sk-label">显示模式<span class="sk-dot">2</span><span class="sk-hint">一键快捷方式</span></div>
+    <div class="sk-segfull">
+      <button type="button" id="sk-mirror-all">全镜像</button>
+      <button type="button" id="sk-extend-all">全扩展</button>
+    </div>
+
+    <div class="sk-label">分辨率<span class="sk-dot">3</span></div>
+    <div class="sk-gseg" id="sk-gseg"></div>
+    <div class="sk-card"><div class="sk-reslist" id="sk-res"></div></div>
+
+    <div class="sk-label">场景预设</div>
+    <div class="sk-card">
+      <div class="sk-prow"><div class="sk-row-main"><div class="sk-row-title">借出显示器</div><div class="sk-row-sub">全镜像 · 内建为主</div></div><button class="sk-apply" type="button">应用</button></div>
+      <div class="sk-prow sk-bt"><div class="sk-row-main"><div class="sk-row-title">收回显示器</div><div class="sk-row-sub">全镜像 · 外接为主</div></div><button class="sk-apply" type="button">应用</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="sk-legend">
+  <p><span class="sk-dot">1</span>每台屏幕选「独立」或「跟随某台」，跟随关系自动聚成镜像组；被跟随的屏幕就是组主屏，不用再单独挑主屏。</p>
+  <p><span class="sk-dot">2</span>现在的「镜像 / 扩展」降级为一键快捷方式：全镜像 = 所有屏幕跟随同一台；全扩展 = 全部独立。</p>
+  <p><span class="sk-dot">3</span>分辨率按组设置：点组标签切换，组内所有屏幕统一到该分辨率（由组主屏的模式列表决定）。</p>
+  <p class="sk-legend-tip">草图可交互：点每行的「跟随」芯片、全镜像/全扩展、切换分辨率组试试。</p>
+</div>
+
+<script>
+(function(){
+  var LAPTOP='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="10" rx="1.5"/><path d="M2.5 18.5h19"/></svg>';
+  var MONITOR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="11.5" rx="1.5"/><path d="M9 20h6M12 16v4"/></svg>';
+  var CHECK='<svg class="sk-res-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+  var D=[
+    {id:'b', name:'内建显示器',   short:'内建',  builtin:true,  hz:120, def:'1512×982',  modes:['1800×1169','1512×982','1352×878','1147×745','1024×665']},
+    {id:'e1',name:'外接显示器 1', short:'外接1', builtin:false, hz:60,  def:'3008×1692', modes:['3840×2160','3360×1890','3008×1692','2560×1440','2304×1296','1920×1080','1504×846']},
+    {id:'e2',name:'外接显示器 2', short:'外接2', builtin:false, hz:60,  def:'3840×2160', modes:['3840×2160','2560×1440','1920×1080','1280×720']}
+  ];
+  var follow={b:'e1', e1:null, e2:null};
+  var gres={};
+  D.forEach(function(d){ gres[d.id]=d.def; });
+  var selGroup=null;
+
+  function byId(id){ for(var i=0;i<D.length;i++) if(D[i].id===id) return D[i]; return null; }
+  function rootOf(id){ var c=id; for(var i=0;i<D.length;i++){ if(!follow[c]) break; c=follow[c]; } return c; }
+  function chainHits(start,target){ var c=start; for(var i=0;i<D.length&&c;i++){ c=follow[c]; if(c===target) return true; } return false; }
+  function groups(){
+    var keys=[],map={};
+    D.forEach(function(d){ var r=rootOf(d.id); if(!map[r]){ map[r]={key:r,members:[]}; keys.push(r);} map[r].members.push(d); });
+    return keys.map(function(k){
+      var g=map[k];
+      g.res=gres[k]||byId(k).def;
+      g.members.sort(function(a,b){ return (a.id===k?0:1)-(b.id===k?0:1); });
+      return g;
+    });
+  }
+  function selKey(gs){ for(var i=0;i<gs.length;i++) if(gs[i].key===selGroup) return selGroup; return gs[0].key; }
+
+  function render(){
+    var gs=groups();
+    var gIdx={}; gs.forEach(function(g,i){ gIdx[g.key]=i; });
+
+    var resStr=gs.map(function(g){ return g.res; }).join(' + ');
+    var pill=document.getElementById('sk-pill');
+    if(gs.length===1) pill.textContent='镜像 · '+resStr;
+    else if(gs.every(function(g){ return g.members.length===1; })) pill.textContent='扩展 · '+resStr;
+    else pill.textContent=gs.length+'组 · '+resStr;
+
+    var rows=document.getElementById('sk-rows');
+    rows.innerHTML='';
+    D.forEach(function(d,i){
+      var r=rootOf(d.id), gi=gIdx[r], g=gs[gi];
+      var isSolo=g.members.length===1, isPri=(r===d.id);
+      var badge, sub;
+      if(isSolo){ badge='独立'; sub=g.res+' · '+d.hz+'Hz'; }
+      else if(isPri){ badge='组'+(gi+1)+' · 主屏'; sub=g.res+' · '+d.hz+'Hz'; }
+      else { badge='组'+(gi+1); sub='跟随'+byId(r).short+' · '+g.res; }
+
+      var row=document.createElement('div');
+      row.className='sk-row'+(i?' sk-bt':'');
+      row.innerHTML='<div class="sk-row-icon">'+(d.builtin?LAPTOP:MONITOR)+'</div>'+
+        '<div class="sk-row-main">'+
+          '<div class="sk-row-title">'+d.name+'<span class="sk-badge'+(isPri&&!isSolo?' sk-badge-pri':'')+'">'+badge+'</span></div>'+
+          '<div class="sk-row-sub">'+sub+'</div>'+
+          '<div class="sk-chips"></div>'+
+        '</div>';
+      var chips=row.querySelector('.sk-chips');
+      function mk(label,val){
+        var b=document.createElement('button');
+        b.type='button';
+        b.className='sk-chip'+(((follow[d.id]||null)===val)?' sk-chip-on':'');
+        b.textContent=label;
+        b.addEventListener('click',function(){ setFollow(d.id,val); });
+        chips.appendChild(b);
+      }
+      mk('独立',null);
+      D.forEach(function(o){ if(o.id!==d.id) mk('跟随 '+o.short,o.id); });
+      rows.appendChild(row);
+    });
+
+    var gseg=document.getElementById('sk-gseg');
+    gseg.innerHTML='';
+    var curKey=selKey(gs);
+    if(gs.length===1){
+      var s=document.createElement('span');
+      s.className='sk-gnote';
+      s.textContent='只有一个镜像组 · 全组统一分辨率';
+      gseg.appendChild(s);
+    } else {
+      gs.forEach(function(g,i){
+        var b=document.createElement('button');
+        b.type='button';
+        b.className='sk-gtab'+(curKey===g.key?' sk-gtab-on':'');
+        b.textContent=g.members.length===1?g.members[0].short:'组'+(i+1)+' · '+byId(g.key).short;
+        b.addEventListener('click',function(){ selGroup=g.key; render(); });
+        gseg.appendChild(b);
+      });
+    }
+
+    var g=null; gs.forEach(function(x){ if(x.key===curKey) g=x; });
+    var res=document.getElementById('sk-res');
+    res.innerHTML='';
+    if(g){
+      var pd=byId(g.key);
+      pd.modes.forEach(function(m,mi){
+        var rw=document.createElement('button');
+        rw.type='button';
+        rw.className='sk-res-row'+(g.res===m?' sk-res-cur':'');
+        rw.innerHTML='<span class="sk-res-val">'+m+'</span>'+(mi===0?'<span class="sk-res-tag">原生</span>':'')+CHECK;
+        rw.addEventListener('click',function(){ gres[g.key]=m; render(); });
+        res.appendChild(rw);
+      });
+    }
+  }
+
+  function setFollow(id,val){
+    if(val!==null&&chainHits(val,id)) follow[val]=null;
+    follow[id]=val;
+    render();
+  }
+
+  document.getElementById('sk-mirror-all').addEventListener('click',function(){
+    var target=null;
+    for(var i=0;i<D.length;i++) if(!D[i].builtin){ target=D[i].id; break; }
+    if(!target) target=D[0].id;
+    D.forEach(function(d){ follow[d.id]=(d.id===target)?null:target; });
+    render();
+  });
+  document.getElementById('sk-extend-all').addEventListener('click',function(){
+    D.forEach(function(d){ follow[d.id]=null; });
+    render();
+  });
+
+  render();
+})();
+</script>
+</div>
+</body>
+</html>

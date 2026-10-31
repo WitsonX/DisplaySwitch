@@ -1,0 +1,22 @@
+[package]
+name = "display-switch"
+version = "0.2.0"
+description = "显示器快捷切换工具"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-autostart = "2.7.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+window-vibrancy = "0.6"
+core-graphics = "0.24"
+
+[profile.release]
+strip = true
+lto = true

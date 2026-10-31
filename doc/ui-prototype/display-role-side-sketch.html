@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>草图 · 每行选角色 左右结构版</title>
+<style>
+html{color-scheme:light dark}
+body{margin:0;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;background:light-dark(#e8e8ed,#111114)}
+</style>
+</head>
+<body>
+<div id="ds-side-sketch">
+<style>
+#ds-side-sketch{
+  color-scheme:light dark;
+  --bg:light-dark(#f5f5f7,#1c1c1e);
+  --card:light-dark(#ffffff,#2a2a2c);
+  --t1:light-dark(#1d1d1f,#f2f2f4);
+  --t2:light-dark(#86868b,#98989e);
+  --div:light-dark(rgba(0,0,0,.06),rgba(255,255,255,.08));
+  --acc:light-dark(#0a84ff,#5aa8ff);
+  --accs:light-dark(rgba(10,132,255,.12),rgba(90,168,255,.18));
+  --fill:light-dark(rgba(0,0,0,.05),rgba(255,255,255,.08));
+  font-family:var(--font-sans,-apple-system,"PingFang SC","Helvetica Neue",sans-serif);
+  font-size:13px;
+  color:var(--t1);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:14px;
+}
+#ds-side-sketch .sk-panel{position:relative;width:600px;max-width:100%;background:var(--bg);border-radius:16px;box-shadow:light-dark(0 12px 40px rgba(0,0,0,.16),0 12px 40px rgba(0,0,0,.5));overflow:hidden;}
+#ds-side-sketch .sk-header{display:flex;align-items:center;gap:8px;padding:14px 16px 10px;}
+#ds-side-sketch .sk-title{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;}
+#ds-side-sketch .sk-title svg{width:15px;height:15px;}
+#ds-side-sketch .sk-pill{margin-left:auto;font-size:11px;color:var(--t2);background:var(--fill);padding:3px 9px;border-radius:999px;white-space:nowrap;}
+#ds-side-sketch .sk-body{padding:0 12px 14px;}
+#ds-side-sketch .sk-cols{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;}
+#ds-side-sketch .sk-left{flex:1 1 300px;min-width:260px;display:flex;flex-direction:column;gap:8px;}
+#ds-side-sketch .sk-right{flex:1 1 220px;min-width:200px;display:flex;flex-direction:column;gap:8px;}
+#ds-side-sketch .sk-label{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t2);padding:0 4px;}
+#ds-side-sketch .sk-dot{display:inline-flex;align-items:center;justify-content:center;min-width:15px;height:15px;padding:0 3px;border-radius:999px;background:var(--acc);color:#fff;font-size:10px;font-weight:500;flex:none;}
+#ds-side-sketch .sk-card{background:var(--card);border-radius:12px;}
+#ds-side-sketch .sk-row{display:flex;gap:10px;padding:9px 11px;cursor:pointer;border-left:2px solid transparent;}
+#ds-side-sketch .sk-row-sel{background:var(--accs);border-left-color:var(--acc);}
+#ds-side-sketch .sk-bt{border-top:1px solid var(--div);}
+#ds-side-sketch .sk-row-sel.sk-bt{border-top-color:transparent;}
+#ds-side-sketch .sk-row-icon{width:28px;height:28px;border-radius:8px;background:var(--fill);display:flex;align-items:center;justify-content:center;flex:none;color:var(--t1);}
+#ds-side-sketch .sk-row-icon svg{width:16px;height:16px;}
+#ds-side-sketch .sk-row-main{flex:1;min-width:0;}
+#ds-side-sketch .sk-line1{display:flex;align-items:center;gap:8px;}
+#ds-side-sketch .sk-row-title{font-size:12.5px;font-weight:500;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#ds-side-sketch .sk-role{font-size:11px;padding:3px 6px;border-radius:7px;border:1px solid var(--div);background:var(--fill);color:var(--t1);font-family:inherit;cursor:pointer;max-width:120px;flex:none;}
+#ds-side-sketch .sk-role-main{border-color:var(--acc);background:var(--accs);color:var(--acc);font-weight:500;}
+#ds-side-sketch .sk-line2{display:flex;align-items:center;gap:7px;margin-top:6px;}
+#ds-side-sketch .sk-gfx{width:34px;height:22px;border-radius:4px;border:1.5px solid var(--acc);background:var(--accs);color:var(--acc);font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none;}
+#ds-side-sketch .sk-gfx-mirror{border-style:dashed;}
+#ds-side-sketch .sk-sub{font-size:11px;color:var(--t2);font-variant-numeric:tabular-nums;}
+#ds-side-sketch .sk-rescard{overflow:hidden;}
+#ds-side-sketch .sk-reshead{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--div);font-size:12px;font-weight:500;}
+#ds-side-sketch .sk-reshead .sk-sub{font-weight:400;margin-left:auto;}
+#ds-side-sketch .sk-reslist{max-height:260px;overflow-y:auto;}
+#ds-side-sketch .sk-res-row{display:flex;align-items:center;gap:8px;width:100%;padding:7px 12px;border:none;background:transparent;font-size:12px;color:var(--t1);cursor:pointer;font-family:inherit;text-align:left;}
+#ds-side-sketch .sk-res-row + .sk-res-row{border-top:1px solid var(--div);}
+#ds-side-sketch .sk-res-val{font-variant-numeric:tabular-nums;}
+#ds-side-sketch .sk-res-tag{font-size:10px;color:var(--t2);background:var(--fill);padding:1px 6px;border-radius:999px;}
+#ds-side-sketch .sk-res-check{width:13px;height:13px;margin-left:auto;color:var(--acc);opacity:0;flex:none;}
+#ds-side-sketch .sk-res-cur .sk-res-check{opacity:1;}
+#ds-side-sketch .sk-res-cur .sk-res-val{color:var(--acc);font-weight:500;}
+#ds-side-sketch .sk-mirror-note{padding:14px 12px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;}
+#ds-side-sketch .sk-mirror-note .sk-sub{white-space:normal;line-height:1.5;}
+#ds-side-sketch .sk-presets{margin-top:10px;display:flex;flex-direction:column;gap:8px;}
+#ds-side-sketch .sk-pills{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+#ds-side-sketch .sk-ppill{font-size:12px;padding:6px 13px;border-radius:999px;border:1px solid var(--div);background:var(--card);color:var(--t1);cursor:pointer;font-family:inherit;}
+#ds-side-sketch .sk-ppill-save{border-style:dashed;color:var(--acc);background:transparent;}
+#ds-side-sketch .sk-toast{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);background:light-dark(rgba(30,30,32,.92),rgba(60,60,64,.95));color:#fff;font-size:11px;padding:6px 13px;border-radius:999px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s;}
+#ds-side-sketch .sk-toast-on{opacity:1;}
+#ds-side-sketch .sk-legend{width:600px;max-width:100%;display:flex;flex-direction:column;gap:8px;font-size:12px;color:var(--t2);line-height:1.5;}
+#ds-side-sketch .sk-legend p{margin:0;display:flex;gap:7px;align-items:flex-start;}
+#ds-side-sketch .sk-legend .sk-dot{margin-top:2px;}
+#ds-side-sketch .sk-legend-tip{color:var(--acc);}
+</style>
+
+<div class="sk-panel">
+  <header class="sk-header">
+    <div class="sk-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="11.5" rx="1.5"/><path d="M9 20h6M12 16v4"/></svg>显示器</div>
+    <div class="sk-pill" id="sk-pill" aria-live="polite"></div>
+  </header>
+  <div class="sk-body">
+    <div class="sk-cols">
+      <div class="sk-left">
+        <div class="sk-label">显示器<span class="sk-dot">1</span></div>
+        <div class="sk-card" id="sk-rows"></div>
+      </div>
+      <div class="sk-right">
+        <div class="sk-label">分辨率<span class="sk-dot">2</span></div>
+        <div class="sk-card sk-rescard" id="sk-rescard"></div>
+      </div>
+    </div>
+    <div class="sk-presets">
+      <div class="sk-label">场景预设<span class="sk-dot">3</span></div>
+      <div class="sk-pills" id="sk-pills"></div>
+    </div>
+  </div>
+  <div class="sk-toast" id="sk-toast" aria-live="polite"></div>
+</div>
+
+<div class="sk-legend">
+  <p><span class="sk-dot">1</span>左列点选一台显示器（蓝色高亮），角色下拉规则与竖版相同：主显示器全局唯一、镜像不套娃；主屏被降级（镜像/扩展）时「主」自动交给另一台屏，主显示器永远存在。</p>
+  <p><span class="sk-dot">2</span>右侧常驻显示选中屏的分辨率列表，不再展开/收起；选中镜像屏时右侧显示「跟随」说明，改分辨率要去目标屏。</p>
+  <p><span class="sk-dot">3</span>预设作用于整套配置而非单台屏，所以放底部通栏一行：点名字直接应用（悬停看说明），虚线胶囊把当前配置存为新预设。</p>
+  <p class="sk-legend-tip">代价：面板要从 336px 加宽到约 600px，托盘弹窗变成小窗口。可交互：点左列换选中、切角色、改分辨率、点底部预设试试。</p>
+</div>
+
+<script>
+(function(){
+  var LAPTOP='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="10" rx="1.5"/><path d="M2.5 18.5h19"/></svg>';
+  var MONITOR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="11.5" rx="1.5"/><path d="M9 20h6M12 16v4"/></svg>';
+  var CHECK='<svg class="sk-res-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+
+  var D=[
+    {id:'b', name:'内建显示器',   short:'内建',  builtin:true,  hz:120, modes:['1800×1169','1512×982','1352×878','1147×745','1024×665']},
+    {id:'e1',name:'外接显示器 1', short:'外接1', builtin:false, hz:60,  modes:['3840×2160','3360×1890','3008×1692','2560×1440','2304×1296','1920×1080','1504×846']},
+    {id:'e2',name:'外接显示器 2', short:'外接2', builtin:false, hz:60,  modes:['3840×2160','2560×1440','1920×1080','1280×720']}
+  ];
+  var roles={b:'main', e1:'mirror', e2:'extend'};
+  var mirTarget={e1:'e2'};
+  var res={b:'1512×982', e1:'3008×1692', e2:'3840×2160'};
+  var selected='b';
+
+  function byId(id){ for(var i=0;i<D.length;i++) if(D[i].id===id) return D[i]; return null; }
+  function letters(){
+    var map={}, next=65;
+    D.forEach(function(d){ if(roles[d.id]!=='mirror') map[d.id]=String.fromCharCode(next++); });
+    D.forEach(function(d){ if(roles[d.id]==='mirror') map[d.id]=map[mirTarget[d.id]]||'?'; });
+    return map;
+  }
+
+  function promoteMain(exceptId){
+    for(var i=0;i<D.length;i++){
+      var o=D[i];
+      if(o.id===exceptId) continue;
+      if(roles[o.id]!=='mirror'){ roles[o.id]='main'; return true; }
+    }
+    return false;
+  }
+  function setRole(id,val){
+    if(val==='main'){
+      D.forEach(function(o){ if(o.id!==id && roles[o.id]==='main') roles[o.id]='extend'; });
+      roles[id]='main';
+      delete mirTarget[id];
+    } else if(val==='extend'){
+      if(roles[id]==='main' && !promoteMain(id)) { render(); return; }
+      roles[id]='extend';
+      delete mirTarget[id];
+    } else {
+      var t=val.slice(7);
+      if(roles[id]==='main') roles[t]='main';
+      D.forEach(function(o){ if(o.id!==id && mirTarget[o.id]===id) mirTarget[o.id]=t; });
+      roles[id]='mirror';
+      mirTarget[id]=t;
+    }
+    render();
+  }
+
+  function render(){
+    var lt=letters();
+    var mainD=null, mirrorCount=0;
+    D.forEach(function(d){ if(roles[d.id]==='main') mainD=d; if(roles[d.id]==='mirror') mirrorCount++; });
+
+    document.getElementById('sk-pill').textContent=D.length+'屏 · 主 '+mainD.short+(mirrorCount?' · '+mirrorCount+'屏镜像':'');
+
+    var rows=document.getElementById('sk-rows');
+    rows.innerHTML='';
+    D.forEach(function(d,i){
+      var role=roles[d.id];
+      var row=document.createElement('div');
+      row.className='sk-row'+(i?' sk-bt':'')+(selected===d.id?' sk-row-sel':'');
+      row.addEventListener('click',function(ev){
+        if(ev.target.tagName==='SELECT'||ev.target.tagName==='OPTION') return;
+        selected=d.id; render();
+      });
+
+      var sub;
+      if(role==='mirror'){
+        var t=byId(mirTarget[d.id]);
+        sub='<span class="sk-gfx sk-gfx-mirror" title="内容与'+t.short+'相同">'+lt[d.id]+'</span><span class="sk-sub">跟随'+t.short+' · '+res[t.id]+'</span>';
+      } else {
+        sub='<span class="sk-gfx" title="这块屏显示的内容">'+lt[d.id]+'</span><span class="sk-sub">'+res[d.id]+' · '+d.hz+'Hz</span>';
+      }
+
+      row.innerHTML='<div class="sk-row-icon">'+(d.builtin?LAPTOP:MONITOR)+'</div>'+
+        '<div class="sk-row-main">'+
+          '<div class="sk-line1"><span class="sk-row-title">'+d.name+'</span><select class="sk-role'+(role==='main'?' sk-role-main':'')+'"></select></div>'+
+          '<div class="sk-line2">'+sub+'</div>'+
+        '</div>';
+
+      var sel=row.querySelector('select');
+      function opt(label,value,sel2){
+        var o=document.createElement('option');
+        o.value=value; o.textContent=label;
+        if(sel2) o.selected=true;
+        sel.appendChild(o);
+      }
+      opt('主显示器','main',role==='main');
+      D.forEach(function(o){
+        if(o.id===d.id) return;
+        if(roles[o.id]==='mirror') return;
+        if(mirTarget[o.id]===d.id) return;
+        opt('与 '+o.short+' 镜像','mirror:'+o.id, role==='mirror'&&mirTarget[d.id]===o.id);
+      });
+      opt('扩展显示器','extend',role==='extend');
+      sel.addEventListener('click',function(ev){ ev.stopPropagation(); });
+      sel.addEventListener('change',function(){ setRole(d.id, sel.value); });
+
+      rows.appendChild(row);
+    });
+
+    var card=document.getElementById('sk-rescard');
+    card.innerHTML='';
+    var sd=byId(selected);
+    if(roles[selected]==='mirror'){
+      var t2=byId(mirTarget[selected]);
+      var note=document.createElement('div');
+      note.className='sk-mirror-note';
+      note.innerHTML='<span class="sk-gfx sk-gfx-mirror">'+lt[selected]+'</span>'+
+        '<span class="sk-sub">'+sd.name+'与'+t2.short+'镜像，分辨率由'+t2.short+'决定（当前 '+res[t2.id]+'）。要改分辨率，请在左列选中'+t2.name+'。</span>';
+      card.appendChild(note);
+    } else {
+      var head=document.createElement('div');
+      head.className='sk-reshead';
+      head.innerHTML='<span>'+sd.name+'</span><span class="sk-sub">'+sd.hz+'Hz</span>';
+      card.appendChild(head);
+      var list=document.createElement('div');
+      list.className='sk-reslist';
+      sd.modes.forEach(function(m,mi){
+        var rw=document.createElement('button');
+        rw.type='button';
+        rw.className='sk-res-row'+(res[selected]===m?' sk-res-cur':'');
+        rw.innerHTML='<span class="sk-res-val">'+m+'</span>'+(mi===0?'<span class="sk-res-tag">原生</span>':'')+CHECK;
+        rw.addEventListener('click',function(){ res[selected]=m; render(); });
+        list.appendChild(rw);
+      });
+      card.appendChild(list);
+    }
+  }
+
+  var PRESETS=[
+    {name:'借出显示器', desc:'全部镜像 · 内建为主', apply:function(){
+      roles={b:'main',e1:'mirror',e2:'mirror'};
+      mirTarget={e1:'b',e2:'b'};
+      res.b='1512×982';
+      selected='b';
+    }},
+    {name:'收回显示器', desc:'全部镜像 · 外接1为主', apply:function(){
+      roles={b:'mirror',e1:'main',e2:'mirror'};
+      mirTarget={b:'e1',e2:'e1'};
+      res.e1='3008×1692';
+      selected='e1';
+    }}
+  ];
+  var toastTimer=null;
+  function toast(msg){
+    var el=document.getElementById('sk-toast');
+    el.textContent=msg;
+    el.classList.add('sk-toast-on');
+    if(toastTimer) clearTimeout(toastTimer);
+    toastTimer=setTimeout(function(){ el.classList.remove('sk-toast-on'); },1600);
+  }
+  var pills=document.getElementById('sk-pills');
+  PRESETS.forEach(function(p){
+    var b=document.createElement('button');
+    b.type='button';
+    b.className='sk-ppill';
+    b.textContent=p.name;
+    b.title=p.desc;
+    b.addEventListener('click',function(){ p.apply(); render(); toast('已应用「'+p.name+'」'); });
+    pills.appendChild(b);
+  });
+  var saveB=document.createElement('button');
+  saveB.type='button';
+  saveB.className='sk-ppill sk-ppill-save';
+  saveB.textContent='+ 保存当前配置…';
+  saveB.addEventListener('click',function(){ toast('已把当前配置存为预设（演示）'); });
+  pills.appendChild(saveB);
+
+  render();
+})();
+</script>
+</div>
+</body>
+</html>

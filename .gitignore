@@ -1,0 +1,19 @@
+node_modules
+dist
+.DS_Store
+
+# Rust / Tauri 构建产物
+src-tauri/target
+src-tauri/gen/schemas
+
+# 图标生成器的输出（`swift tools/gen_icons.swift tools/out` 可重生成）
+# 注意：src/assets/app-icon.png 是前端要用的资源，不在忽略范围内
+tools/out
+
+# macOS-only 项目：tauri icon 顺带生成的移动端图标不入库（跑一次生成命令即可重出）
+src-tauri/icons/android
+src-tauri/icons/ios
+
+# 过程素材：被替换掉的 AI 图标稿、真机截图草稿
+vibe_images
+doc/temp

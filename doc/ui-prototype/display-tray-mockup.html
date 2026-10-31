@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>显示器托盘面板 · 改版稿</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  :root {
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --divider: rgba(0,0,0,.06);
+    --text-1: #1d1d1f;
+    --text-2: #86868b;
+    --accent: #0a84ff;
+    --accent-soft: rgba(10,132,255,.12);
+    --radius: 12px;
+  }
+  body {
+    font-family: -apple-system, "SF Pro Text", "PingFang SC", sans-serif;
+    background: #e8e8ed;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 16px;
+  }
+
+  /* ===== 面板 ===== */
+  .panel {
+    width: 336px;
+    background: var(--bg);
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.18), 0 0 0 .5px rgba(0,0,0,.08);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ===== 头部：标题 + 当前状态摘要 ===== */
+  .panel-header {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px 10px;
+  }
+  .panel-header .title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-1);
+  }
+  .panel-header .title svg { color: var(--accent); }
+  .status-pill {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-2);
+    background: rgba(0,0,0,.05);
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .close-btn {
+    margin-left: 8px;
+    width: 22px; height: 22px;
+    border: none; background: none;
+    color: var(--text-2);
+    font-size: 14px;
+    cursor: pointer;
+    border-radius: 6px;
+    line-height: 1;
+  }
+  .close-btn:hover { background: rgba(0,0,0,.06); color: var(--text-1); }
+
+  /* ===== 区块 ===== */
+  .section { padding: 6px 12px 10px; }
+  .section-label {
+    display: flex;
+    align-items: center;
+    padding: 0 4px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-2);
+    letter-spacing: .02em;
+    min-height: 24px;
+  }
+  .section-label .hint {
+    margin-left: auto;
+    font-weight: 400;
+    font-size: 11px;
+    color: var(--text-2);
+  }
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: 0 .5px 1.5px rgba(0,0,0,.05);
+    overflow: hidden;
+  }
+
+  /* ===== 显示器列表 ===== */
+  .display-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .display-row + .display-row { border-top: .5px solid var(--divider); }
+  .display-row .icon {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.04);
+    border-radius: 8px;
+    color: #555;
+    flex-shrink: 0;
+  }
+  .display-row .info { min-width: 0; flex: 1; }
+  .display-row .name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .display-row .sub {
+    font-size: 11px;
+    color: var(--text-2);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .badge {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 4px;
+    padding: 1.5px 6px;
+    flex-shrink: 0;
+  }
+
+  /* ===== 分段控件（全宽） ===== */
+  .seg {
+    display: flex;
+    background: rgba(0,0,0,.06);
+    border-radius: 9px;
+    padding: 2px;
+  }
+  .seg button {
+    flex: 1;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--text-1);
+    padding: 5px 0;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background .15s, box-shadow .15s;
+  }
+  .seg button.active {
+    background: #fff;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0,0,0,.12);
+  }
+
+  /* ===== 迷你分段（分辨率区块标题右侧，扩展模式用） ===== */
+  .seg-mini {
+    margin-left: auto;
+    display: flex;
+    background: rgba(0,0,0,.06);
+    border-radius: 7px;
+    padding: 1.5px;
+  }
+  .seg-mini.hidden { display: none; }
+  .seg-mini button {
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 11px;
+    color: var(--text-1);
+    padding: 2.5px 10px;
+    border-radius: 5.5px;
+    cursor: pointer;
+    transition: background .15s, box-shadow .15s;
+  }
+  .seg-mini button.active {
+    background: #fff;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,.12);
+  }
+
+  /* 主屏选择（仅镜像模式出现） */
+  .primary-pick {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .primary-pick.hidden { display: none; }
+  .primary-pick button {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    border: 1px solid var(--divider);
+    background: var(--card);
+    border-radius: 9px;
+    padding: 7px 10px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .primary-pick button .t { font-size: 12px; font-weight: 500; color: var(--text-1); }
+  .primary-pick button .s { font-size: 10.5px; color: var(--text-2); }
+  .primary-pick button.active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  /* ===== 分辨率列表 ===== */
+  .res-list { max-height: 198px; overflow-y: auto; }
+  .res-list::-webkit-scrollbar { width: 0; }
+  .res-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    border: none;
+    background: none;
+    font-family: inherit;
+    padding: 9px 12px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .res-row + .res-row { border-top: .5px solid var(--divider); }
+  .res-row:hover { background: rgba(0,0,0,.025); }
+  .res-row .val { font-size: 13px; font-weight: 500; color: var(--text-1); font-variant-numeric: tabular-nums; }
+  .res-row .tag {
+    margin-left: 8px;
+    font-size: 10px;
+    color: var(--text-2);
+    background: rgba(0,0,0,.05);
+    padding: 1.5px 6px;
+    border-radius: 4px;
+  }
+  .res-row .check {
+    margin-left: auto;
+    width: 16px; height: 16px;
+    color: var(--accent);
+    opacity: 0;
+  }
+  .res-row.current { background: var(--accent-soft); }
+  .res-row.current .val { color: var(--accent); }
+  .res-row.current .check { opacity: 1; }
+
+  /* ===== 场景预设 ===== */
+  .preset-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+  }
+  .preset-row + .preset-row { border-top: .5px solid var(--divider); }
+  .preset-row .info { flex: 1; min-width: 0; }
+  .preset-row .name { font-size: 13px; font-weight: 500; color: var(--text-1); }
+  .preset-row .sub {
+    font-size: 11px; color: var(--text-2); margin-top: 1px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .apply-btn {
+    border: none;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 14px;
+    border-radius: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .apply-btn:hover { background: rgba(10,132,255,.2); }
+  .apply-btn:active { transform: scale(.96); }
+
+  /* ===== 底部 ===== */
+  .panel-footer { padding: 4px 12px 12px; }
+  .save-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 12.5px;
+    color: var(--accent);
+    padding: 8px 4px 2px;
+    cursor: pointer;
+    border-radius: 8px;
+  }
+  .save-link:hover { background: rgba(10,132,255,.06); }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <!-- 头部 -->
+  <div class="panel-header">
+    <div class="title">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      显示器
+    </div>
+    <span class="status-pill" id="statusPill">镜像 · 3008×1692</span>
+    <button class="close-btn" title="关闭">✕</button>
+  </div>
+
+  <!-- 显示器 -->
+  <div class="section">
+    <div class="card">
+      <div class="display-row">
+        <div class="icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </div>
+        <div class="info">
+          <div class="name">外接显示器 <span class="badge" id="badgeExt">主屏</span></div>
+          <div class="sub" id="extSub">32 inch · 3008×1692</div>
+        </div>
+      </div>
+      <div class="display-row">
+        <div class="icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="10" rx="1.5"/><path d="M2 18h20l-1.2 2.4a1 1 0 0 1-.9.6H4.1a1 1 0 0 1-.9-.6L2 18z"/></svg>
+        </div>
+        <div class="info">
+          <div class="name">内建显示器 <span class="badge" id="badgeInt" style="display:none">主屏</span></div>
+          <div class="sub" id="intSub">MacBook built in · 跟随外接显示器</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 显示模式 -->
+  <div class="section">
+    <div class="section-label">显示模式</div>
+    <div class="seg" id="modeSeg">
+      <button class="active" data-mode="mirror">镜像</button>
+      <button data-mode="extend">扩展</button>
+    </div>
+    <div class="primary-pick" id="primaryPick">
+      <button class="active" data-primary="ext">
+        <span class="t">外接显示器</span>
+        <span class="s">作为主屏</span>
+      </button>
+      <button data-primary="int">
+        <span class="t">内建显示器</span>
+        <span class="s">作为主屏</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 分辨率 -->
+  <div class="section">
+    <div class="section-label">
+      分辨率
+      <span class="hint" id="resHint">镜像 · 由主屏决定</span>
+      <div class="seg-mini hidden" id="resTargetSeg">
+        <button class="active" data-target="ext">外接</button>
+        <button data-target="int">内建</button>
+      </div>
+    </div>
+    <div class="card res-list" id="resList"></div>
+  </div>
+
+  <!-- 场景预设 -->
+  <div class="section">
+    <div class="section-label">场景预设</div>
+    <div class="card">
+      <div class="preset-row">
+        <div class="info">
+          <div class="name">借出显示器</div>
+          <div class="sub">内建为主 · 镜像 · 1512×982</div>
+        </div>
+        <button class="apply-btn">应用</button>
+      </div>
+      <div class="preset-row">
+        <div class="info">
+          <div class="name">收回显示器</div>
+          <div class="sub">外接为主 · 镜像 · 3008×1692</div>
+        </div>
+        <button class="apply-btn">应用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部 -->
+  <div class="panel-footer">
+    <button class="save-link">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      保存当前配置…
+    </button>
+  </div>
+</div>
+
+<script>
+  // ===== 数据模型 =====
+  const displays = {
+    ext: {
+      name: '外接显示器',
+      desc: '32 inch',
+      resolutions: [
+        { val: '3840×2160', tag: '原生' },
+        { val: '3360×1890' },
+        { val: '3200×1800' },
+        { val: '3008×1692' },
+        { val: '2560×1440' },
+        { val: '2304×1296' },
+      ],
+      current: '3008×1692',
+    },
+    int: {
+      name: '内建显示器',
+      desc: 'MacBook built in',
+      resolutions: [
+        { val: '3024×1964', tag: '原生' },
+        { val: '1800×1169' },
+        { val: '1512×982' },
+        { val: '1352×878' },
+        { val: '1147×745' },
+        { val: '1024×665' },
+      ],
+      current: '3024×1964',
+    },
+  };
+
+  let mode = 'mirror';      // mirror | extend
+  let primary = 'ext';      // 镜像模式下的主屏
+  let resTarget = 'ext';    // 扩展模式下分辨率列表正在编辑哪台
+
+  const $ = id => document.getElementById(id);
+  const resList = $('resList');
+
+  // 当前分辨率列表属于哪台显示器
+  function activeDisplay() {
+    return mode === 'mirror' ? primary : resTarget;
+  }
+
+  // ===== 渲染分辨率列表 =====
+  function renderRes() {
+    const d = displays[activeDisplay()];
+    resList.innerHTML = '';
+    d.resolutions.forEach(r => {
+      const btn = document.createElement('button');
+      btn.className = 'res-row' + (r.val === d.current ? ' current' : '');
+      btn.innerHTML =
+        '<span class="val">' + r.val + '</span>' +
+        (r.tag ? '<span class="tag">' + r.tag + '</span>' : '') +
+        '<svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+      btn.onclick = () => {
+        d.current = r.val;
+        // 镜像模式下另一台跟随主屏
+        if (mode === 'mirror') {
+          const other = primary === 'ext' ? 'int' : 'ext';
+          displays[other].current = r.val;
+        }
+        renderAll();
+      };
+      resList.appendChild(btn);
+    });
+  }
+
+  // ===== 渲染显示器卡片 =====
+  function renderCards() {
+    $('badgeExt').style.display = primary === 'ext' ? '' : 'none';
+    $('badgeInt').style.display = primary === 'int' ? '' : 'none';
+    if (mode === 'mirror') {
+      const p = displays[primary];
+      const s = displays[primary === 'ext' ? 'int' : 'ext'];
+      $(primary === 'ext' ? 'extSub' : 'intSub').textContent = p.desc + ' · ' + p.current;
+      $(primary === 'ext' ? 'intSub' : 'extSub').textContent = s.desc + ' · 跟随' + p.name;
+    } else {
+      $('extSub').textContent = displays.ext.desc + ' · ' + displays.ext.current;
+      $('intSub').textContent = displays.int.desc + ' · ' + displays.int.current;
+    }
+  }
+
+  // ===== 渲染状态胶囊 =====
+  function renderStatus() {
+    if (mode === 'mirror') {
+      $('statusPill').textContent = '镜像 · ' + displays[primary].current;
+    } else {
+      $('statusPill').textContent = '扩展 · ' + displays.ext.current + ' + ' + displays.int.current;
+    }
+  }
+
+  // ===== 渲染模式相关 UI =====
+  function renderModeUI() {
+    document.querySelectorAll('#modeSeg button').forEach(b =>
+      b.classList.toggle('active', b.dataset.mode === mode));
+    $('primaryPick').classList.toggle('hidden', mode !== 'mirror');
+    document.querySelectorAll('#primaryPick button').forEach(b =>
+      b.classList.toggle('active', b.dataset.primary === primary));
+    $('resTargetSeg').classList.toggle('hidden', mode !== 'extend');
+    $('resHint').style.display = mode === 'extend' ? 'none' : '';
+    document.querySelectorAll('#resTargetSeg button').forEach(b =>
+      b.classList.toggle('active', b.dataset.target === resTarget));
+  }
+
+  function renderAll() {
+    renderModeUI();
+    renderCards();
+    renderRes();
+    renderStatus();
+  }
+
+  // ===== 事件 =====
+  $('modeSeg').addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn || btn.dataset.mode === mode) return;
+    mode = btn.dataset.mode;
+    renderAll();
+  });
+
+  $('primaryPick').addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    primary = btn.dataset.primary;
+    // 换主屏时，跟随方同步主屏分辨率
+    const other = primary === 'ext' ? 'int' : 'ext';
+    displays[other].current = displays[primary].current;
+    renderAll();
+  });
+
+  $('resTargetSeg').addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    resTarget = btn.dataset.target;
+    renderAll();
+  });
+
+  renderAll();
+</script>
+</body>
+</html>
