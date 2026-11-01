@@ -28,8 +28,6 @@
 
 从 [Latest Release](https://github.com/WitsonX/DisplaySwitch/releases/latest) 下载 `.dmg`；国内网络也可以从 [Gitee 发行版](https://gitee.com/Witson/DisplaySwitch/releases) 拿（Gitee 是镜像仓库，Release 与附件不跟着镜像走，两边是分别发的）。
 
-> **当前还没有发布版本**。要现在就用，照下面「快速上手」自己 `npm run tauri build`，成品在 `src-tauri/target/release/bundle/dmg/`。
-
 > 安装包未走 Apple 公证，首次打开提示「Apple 无法验证」属固定流程：弹窗点「完成」→「系统设置 → 隐私与安全性 → 安全性」里点**「仍要打开」**，放行只需一次。
 
 ## 界面

@@ -28,8 +28,6 @@ Your external monitor has two inputs and is connected to both the Mac and anothe
 
 Grab the `.dmg` from [Latest Release](https://github.com/WitsonX/DisplaySwitch/releases/latest); in mainland China the [Gitee releases page](https://gitee.com/Witson/DisplaySwitch/releases) may be faster (Gitee mirrors commits only — releases and attachments are published separately on each host).
 
-> **No release has been published yet.** If you want to use it today, follow Quick start below and run `npm run tauri build`; the result lands in `src-tauri/target/release/bundle/dmg/`.
-
 > The build is not Apple-notarized, so the first launch shows "Apple cannot verify" — that is expected. Click Done in the dialog, then System Settings → Privacy & Security → **Open Anyway**. It only takes once.
 
 ## Screenshots
