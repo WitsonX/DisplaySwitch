@@ -94,6 +94,7 @@
             <span class="a-name">快切屏</span>
             <span class="a-en">DisplaySwitch</span>
             <span class="a-ver">v{{ version }}</span>
+            <span v-if="buildLabel" class="a-canary">{{ buildLabel }}</span>
           </div>
           <span class="a-desc">{{ $t('aboutDesc') }}</span>
         </div>
@@ -138,6 +139,8 @@ export default {
   data() {
     return {
       version,
+      // 绿色版构建标识（正式版为空）：由 Vite define 注入，见 vite.config.js
+      buildStamp: typeof __DISPLAYSWITCH_BUILD__ === 'string' ? __DISPLAYSWITCH_BUILD__ : '',
       appIcon,
       renaming: null,
       renameValue: '',
@@ -170,6 +173,10 @@ export default {
         default:
           return t('updateIdle')
       }
+    },
+    // 绿色版在版本号旁标出构建号（canary-<sha> 去掉前缀），正式版为空不显示
+    buildLabel() {
+      return this.buildStamp ? `Canary ${this.buildStamp.replace('canary-', '')}` : ''
     }
   },
   methods: {
@@ -465,6 +472,14 @@ export default {
 .a-ver {
   font-size: 11.5px;
   color: var(--text-2);
+}
+
+.a-canary {
+  font-size: 10.5px;
+  color: #b7791f;
+  background: rgba(183, 121, 31, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
 }
 
 .a-k {

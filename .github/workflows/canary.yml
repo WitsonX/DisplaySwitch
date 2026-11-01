@@ -79,6 +79,9 @@ jobs:
           | --- | --- |
           | macOS（Apple Silicon） | \`DisplaySwitch_Canary_macOS_aarch64.zip\` |
           | macOS（Intel） | \`DisplaySwitch_Canary_macOS_x64.zip\` |
+
+          「关于」窗口里会显示 \`Canary <commit>\`，正式版不显示这一段。
+          The About card shows \`Canary <commit>\`; stable builds show nothing extra.
           EOF
           )
           if gh release view canary >/dev/null 2>&1; then
@@ -124,7 +127,18 @@ jobs:
         run: npm ci
 
       - name: Build .app bundle
+        env:
+          DISPLAYSWITCH_BUILD: ${{ needs.prepare.outputs.stamp }}
         run: npx tauri build --target ${{ matrix.target }} --bundles app
+
+      - name: Verify build stamp injected
+        shell: bash
+        env:
+          DISPLAYSWITCH_BUILD: ${{ needs.prepare.outputs.stamp }}
+        run: |
+          set -euo pipefail
+          grep -rq "$DISPLAYSWITCH_BUILD" dist/assets/
+          echo "绿色版构建号已注入前端：$DISPLAYSWITCH_BUILD"
 
       - name: Zip the app
         shell: bash

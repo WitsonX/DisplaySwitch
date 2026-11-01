@@ -28,6 +28,8 @@
 
 从 [Latest Release](https://github.com/WitsonX/DisplaySwitch/releases/latest) 下载 `.dmg`；国内网络也可以从 [Gitee 发行版](https://gitee.com/Witson/DisplaySwitch/releases) 拿（Gitee 是镜像仓库，Release 与附件不跟着镜像走，两边是分别发的）。
 
+**绿色版**：想直接用最领先的构建，去 [canary 发行页](https://github.com/WitsonX/DisplaySwitch/releases/tag/canary) 拿免安装包（解压即用的 `.app`）。每次推 master 自动重出，包名固定不用挑版本，「关于」里会标出 `Canary <commit>`；只在 GitHub 提供，且跟的是未发布主线，求稳仍建议用正式版。
+
 > 安装包未走 Apple 公证，首次打开提示「Apple 无法验证」属固定流程：弹窗点「完成」→「系统设置 → 隐私与安全性 → 安全性」里点**「仍要打开」**，放行只需一次。
 
 ## 界面

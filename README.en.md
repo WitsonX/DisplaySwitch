@@ -28,6 +28,8 @@ Your external monitor has two inputs and is connected to both the Mac and anothe
 
 Grab the `.dmg` from [Latest Release](https://github.com/WitsonX/DisplaySwitch/releases/latest); in mainland China the [Gitee releases page](https://gitee.com/Witson/DisplaySwitch/releases) may be faster (Gitee mirrors commits only — releases and attachments are published separately on each host).
 
+**Portable build**: want the most advanced build right now? Grab the no-install package (a `.app` you just unzip) from the [canary release page](https://github.com/WitsonX/DisplaySwitch/releases/tag/canary). It is rebuilt on every push to master under a fixed file name — no version to pick — and the About card shows `Canary <commit>`. GitHub only, and it tracks unreleased mainline; stick to the stable build if you value your peace of mind.
+
 > The build is not Apple-notarized, so the first launch shows "Apple cannot verify" — that is expected. Click Done in the dialog, then System Settings → Privacy & Security → **Open Anyway**. It only takes once.
 
 ## Screenshots
