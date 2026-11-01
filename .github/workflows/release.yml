@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Run Rust unit tests
+        working-directory: src-tauri
+        run: cargo test --lib
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS (Apple Silicon)
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - label: macOS (Intel)
+            target: x86_64-apple-darwin
+            bundles: dmg
+
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: '快切屏 DisplaySwitch v__VERSION__'
+          releaseBody: |
+            macOS 菜单栏显示器切换工具：给每台屏定角色（主显/镜像/扩展）选分辨率，配置存成预设一键切换。
+
+            A macOS menu bar display switcher: assign each screen a role (main / mirror / extend), pick a resolution, and switch saved presets in one click.
+
+            ## 下载对应平台 / Pick your platform
+
+            | 平台 | 文件 |
+            | --- | --- |
+            | macOS（Apple Silicon，M 系列芯片） | `*_aarch64.dmg` |
+            | macOS（Intel 芯片） | `*_x64.dmg` |
+
+            ## macOS 首次打开 / First launch on macOS
+
+            安装包只做本地 ad-hoc 签名、未走 Apple 公证，第一次打开会提示「Apple 无法验证」——这是未公证的固定流程，不是检测到恶意软件。放行只需一次：
+
+            1. 在那个弹窗点「完成」；
+            2. 打开「系统设置 → 隐私与安全性」，滚到「安全性」一节，点「已阻止」右侧的**仍要打开**；
+            3. 输入密码确认，之后同一安装位置不再询问。
+
+            Builds are ad-hoc signed and never notarized, so Gatekeeper blocks the first launch — that is the standard path for an un-notarized app, not a malware finding.
+
+            ## Gitee 镜像 / Gitee mirror
+
+            国内可直接从 Gitee 发行版下载：https://gitee.com/Witson/DisplaySwitch/releases （镜像仓库，Release 与附件不跟着镜像走，两边分别发布）。
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterArtifacts: false
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
