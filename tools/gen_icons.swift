@@ -195,10 +195,14 @@ func context(_ w: Int, _ h: Int) -> Ctx {
       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
 }
 
-func save(_ ctx: Ctx, _ path: String) {
+func saveImage(_ img: CGImage, _ path: String) {
   let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil)!
-  CGImageDestinationAddImage(dest, ctx.makeImage()!, nil)
+  CGImageDestinationAddImage(dest, img, nil)
   if !CGImageDestinationFinalize(dest) { FileHandle.standardError.write("写入失败 \(path)\n".data(using: .utf8)!) }
+}
+
+func save(_ ctx: Ctx, _ path: String) {
+  saveImage(ctx.makeImage()!, path)
 }
 
 func gradient(_ sc: Scheme) -> CGGradient {
@@ -273,9 +277,14 @@ func b64(_ path: String) -> String {
 let chosenScheme = schemes.first { $0.id == chosen }!
 save(renderTrayGlyph(chosenScheme), "\(outDir)/tray-template.png")
 save(renderIcon(chosenScheme, 1024), "\(outDir)/app-icon-1024.png")
-// 前端「关于」面板要用的 App 图标（Vite 打进 dist）；从仓库根目录跑生成器
+// 前端「关于」面板要用的 App 图标（Vite 打进 dist）；裁掉 1024 画布四周的留白只留圆角方本体，
+// 带留白的图放在白色卡片上会读成一层白框。从仓库根目录跑生成器
 try? FileManager.default.createDirectory(atPath: "src/assets", withIntermediateDirectories: true)
-save(renderIcon(chosenScheme, 256), "src/assets/app-icon.png")
+let assetSide = 256
+let assetInset = 100.0 / 1024.0 * CGFloat(assetSide)
+let assetArt = 824.0 / 1024.0 * CGFloat(assetSide)
+let fullIcon = renderIcon(chosenScheme, assetSide).makeImage()!
+saveImage(fullIcon.cropping(to: CGRect(x: assetInset, y: assetInset, width: assetArt, height: assetArt))!, "src/assets/app-icon.png")
 save(renderStrip(chosenScheme, dark: true), "\(outDir)/preview-dark.png")
 save(renderStrip(chosenScheme, dark: false), "\(outDir)/preview-light.png")
 

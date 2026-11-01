@@ -267,6 +267,36 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
     manager.is_enabled().map_err(|e| e.to_string())
 }
 
+// 「检查更新」查到新版后跳发布页。地址是前端拼出来的，但 `open` 把它交给系统浏览器，
+// 所以后端只放过我们自己仓库的发布页。
+const RELEASE_PAGES: [&str; 2] = [
+    "https://github.com/WitsonX/DisplaySwitch/",
+    "https://gitee.com/Witson/DisplaySwitch/",
+];
+
+fn is_release_page(url: &str) -> bool {
+    RELEASE_PAGES.iter().any(|p| url.starts_with(p))
+}
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !is_release_page(&url) {
+        return Err(lang::tr(
+            "只允许打开发布页链接",
+            "Only release pages can be opened",
+        )
+        .to_string());
+    }
+    Command::new("open").arg(&url).spawn().map_err(|e| {
+        lang::tr_fill(
+            "无法打开浏览器：{e}",
+            "Could not open the browser: {e}",
+            &[("e", &e)],
+        )
+    })?;
+    Ok(())
+}
+
 // 托盘右键菜单：文案按当前界面语言取，语言变了要重新构建一份
 fn tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let show = MenuItem::with_id(
@@ -416,8 +446,25 @@ pub fn run() {
             hide_panel,
             quit_app,
             get_autostart,
-            set_autostart
+            set_autostart,
+            open_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_release_page;
+
+    #[test]
+    fn only_our_release_pages_are_allowed() {
+        assert!(is_release_page("https://gitee.com/Witson/DisplaySwitch/releases/tag/0.3.0"));
+        assert!(is_release_page(
+            "https://github.com/WitsonX/DisplaySwitch/releases/tag/v0.3.0"
+        ));
+        assert!(!is_release_page("https://evil.test/WitsonX/DisplaySwitch/releases"));
+        assert!(!is_release_page("http://github.com/WitsonX/DisplaySwitch/releases/tag/v1"));
+        assert!(!is_release_page("https://github.com/WitsonX/DisplaySwitchX/releases"));
+    }
 }

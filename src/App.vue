@@ -77,6 +77,7 @@
       @set-pin="setPin"
       @set-autostart="changeAutostart"
       @set-lang="changeLang"
+      @open-url="openUrl"
       @quit="quitApp"
     />
 
@@ -358,6 +359,13 @@ export default {
         this.autostart = enabled
         await this.$nextTick()
         this.refreshAutostart()
+      }
+    },
+    async openUrl(url) {
+      try {
+        await api.openUrl(url)
+      } catch (e) {
+        this.showToast(t('openError', { e }))
       }
     },
     toDraft() {

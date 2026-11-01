@@ -212,3 +212,9 @@ export async function setAutostart(enabled) {
   mockSettings.autostart = enabled
   return enabled
 }
+
+// 检查更新只在真实环境走后端（浏览器预览自己开新标签），后端会校验域名
+export async function openUrl(url) {
+  if (isTauri) return invoke('open_url', { url })
+  window.open(url, '_blank', 'noopener')
+}

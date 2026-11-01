@@ -1,0 +1,161 @@
+# DisplaySwitch 技术说明
+
+**简体中文** · [English](TECHNICAL.en.md)
+
+一句话概括技术选型：**Tauri 2（Rust 后端）+ Vue 3（Options API）+ Vite 前端，真正的切换动作交给内嵌的 [displayplacer](https://github.com/jakehilborn/displayplacer)**。选 Tauri 而不是 Electron，是为了小包体和系统 WebView；显示切换不自己拿 CoreGraphics 硬写，而是「读状态 → 摆角色 → 生成 spec」交给这个成熟的 CLI。
+
+用户看得见的部分在 [README](../README.md)，这里只讲怎么实现的、以及为什么这么实现。
+
+## 架构与托盘窗口
+
+- **窗口**：label `main`，600×520 逻辑点，`decorations:false` + `transparent:true` + `alwaysOnTop` + `skipTaskbar` + `visible:false`（`src-tauri/tauri.conf.json`）。只剩一台显示器时宽度收成 380（`SINGLE_PANEL_WIDTH`）——宽度在托盘点击那一刻按 `LAST_DISPLAY_COUNT` 决定，而这个值每次 `get_state` 都会刷新，所以插拔之后不必重开 App 就能拿到对的宽度。
+- **质感**：`window-vibrancy` 的 `apply_vibrancy(NSVisualEffectMaterial::HudWindow)`，配合圆角卡片就是 macOS 那套 HUD 毛玻璃。
+- **不进程序坞**：`setup` 里 `set_activation_policy(Accessory)`，于是没有 Dock 图标、不占 ⌘Tab，只有菜单栏那枚图标。
+- **失焦即隐藏**：`WindowEvent::Focused(false)` → `hide_panel_window()`。所以点面板外任意处、切到别的 App，面板自己就收了；顶栏 × 走 `hide_panel` 命令，效果相同。
+- **托盘**：`TrayIconBuilder::with_id("main-tray")` + `icon_as_template(true)`。左键弹出/收起，右键是原生菜单（显示面板 / 设置… / 退出）。原生菜单不会跟网页一起重渲染，所以语言变了要就地 `tray_by_id("main-tray").set_menu(Some(tray_menu(app)))` 重建一份。
+- **定位**：托盘点击回传的坐标是物理像素，按 `window.scale_factor()` 换算后再定位；窗口尺寸本身用逻辑点表达，避免 Retina 2x 下两套单位混用。
+- **热插拔**：`setup` 里注册 `CGDisplayRegisterReconfigurationCallback`。合盖/开盖/插拔会连续触发多次回调，所以用一个自增序号做 800ms 防抖，静默期过后只 `emit("displays-changed")` 一次；前端 `listen` 到就重新 `load()`，面板重新拿到焦点时也会刷一次。
+
+## Tauri 命令清单
+
+前端 `src/api.js` 是唯一出口，浏览器预览时同名函数走 mock（见「前端双路径」）。
+
+| 命令 | 参数 | 返回 | 作用 |
+|---|---|---|---|
+| `get_state` | — | `AppState` | 读当前显示器、角色、镜像组与可选档位；顺带刷新 `LAST_DISPLAY_COUNT` |
+| `apply_config` | `config` | — | 按角色生成 displayplacer spec 并执行 |
+| `save_preset` | `name`, `config` | — | 存一整套配置 |
+| `list_presets` | — | `PresetEntry[]` | 列出全部预设（含未接入显示器的） |
+| `delete_preset` | `name` | — | 删除 |
+| `get_settings` | — | `AppSettings` | 收藏、置顶开关、语言偏好 |
+| `toggle_favorite` | `displayId`, `res` | `AppSettings` | 给某屏收藏/取消一档 |
+| `set_pin_favorites` | `pin` | `AppSettings` | 收藏是否置顶 |
+| `set_lang` | `lang` | `AppSettings` | 存语言偏好，并重建托盘菜单 |
+| `hide_panel` | — | — | 收起面板 |
+| `quit_app` | — | — | 退出（`app.exit(0)`） |
+| `get_autostart` | — | `bool` | 回读系统里 LaunchAgent 的真实注册结果 |
+| `set_autostart` | `enabled` | `bool` | 开/关登录自启动，返回最终状态 |
+| `open_url` | `url` | — | 只允许打开发布页，见「检查更新」 |
+
+四个设置类命令（`get_settings` / `toggle_favorite` / `set_pin_favorites` / `set_lang`）**每次都回传最新全量设置**，前端不做本地推断——少一处「前端以为改了、后端没落盘」的错位。
+
+App 自定义命令不需要 capability 条目，`src-tauri/capabilities/default.json` 里只有 `core:default`；插件命令（自启动）才需要，这里也通过 Rust 包一层避开了。
+
+## 显示器身份、名称与尺寸
+
+- **身份**：预设与应用配置一律以 Serial screen id（`sXXXX`）为规范 id，重插线、换接口之后仍然稳定；CGDirectDisplayID 每次重新枚举都会变，不能当持久 key。
+- **一次探测**：`src-tauri/src/sysinfo.rs` 把型号名和物理尺寸一次拿全，按 ctx id 组合缓存，避免每次数显示器都起一遍 `system_profiler`。
+- **型号名**：`system_profiler SPDisplaysDataType -json` 的 `_name`，用 `_spdisplays_displayID` 对上 Contextual id（= CGDirectDisplayID）。
+- **物理尺寸**：IOKit `IOMobileFramebufferShim` 的 `DisplayAttributes` 里 `MaxHorizontal/VerticalImageSize` 换算对角英寸，按其中的 SerialNumber 对上 displayplacer 的 serial。
+- **为什么不信 `CGDisplayScreenSize`**：镜像状态下它返回的是整个镜像组的尺寸，直接采信会让 27″ 和 14″ 显示成同一个数。它只在内建屏拿不到 EDID、且该屏本轮没参与镜像时兜底。
+
+## 状态读取：解析 displayplacer 输出
+
+`src-tauri/src/state.rs` 解析 `displayplacer list` 的文本输出，单元测试的 fixture 是真实机器的输出。
+
+- **主显示器**：读 `Origin` 行尾的 `- main display` 标记。
+- **镜像组**：displayplacer 在末尾给出一条「等效于当前状态」的建议命令，镜像屏会并成同一个 `id:主+从1+从2` token——按这个 token 切分就能还原出多组镜像，比逐屏比对分辨率可靠得多。
+- 解析器只做「读」，任何写操作都在应用配置那一步重新生成 spec，不做增量 patch。
+
+## 应用配置：按角色生成 spec
+
+`build_specs()` 把前端的角色草稿翻译成 displayplacer 参数：
+
+- 镜像组合并成一条 `id:目标+从1+从2 res:... scaling:on`，分辨率取目标屏的。
+- 主显示器放 `origin:(0,0)`——displayplacer 正是借 origin 来设置系统主屏，所以「谁是主显」这件事必须显式落到坐标上。
+- 其余组按宽度从左到右排开，避免重叠。
+- 独立屏附带 `hz` / `color_depth`，**镜像组省略**：镜像组里两块屏的刷新率不一定兼容，带上就会整条命令失败。
+
+前端提交前还有一层角色约束（主显示器全局唯一、降级自动移交、镜像目标只能是主屏或扩展屏、镜像屏分辨率跟随目标），所以后端拿到的草稿一定是合法组合。
+
+## 分辨率档位过滤
+
+模拟系统设置的逻辑，避免列出一堆选了会花屏的档位：只保留与原生宽高比一致（±2%）的模式，且必须是 HiDPI（`scaling:on`）或原生分辨率；同一分辨率有 HiDPI 和普通两个变体时优先 HiDPI；按宽度降序。
+
+## 存储
+
+- **场景预设**：`~/Library/Application Support/com.displayswitch.app/presets/<名称>.json`，v2 角色格式；读到 v1 旧格式（`mode` + `primary`）自动转换，所以老用户的预设不会一夜消失。
+- **设置**：`~/Library/Application Support/com.displayswitch.app/settings.json`（`src-tauri/src/settings.rs`），形如：
+
+```json
+{ "favorites": { "s1001": ["1512x982"] }, "pinFavorites": true, "lang": "auto" }
+```
+
+`pinFavorites` 缺字段按 `true` 读、`lang` 缺字段等同于 `"auto"`——老文件不加迁移也能保持默认行为。收藏按显示器分别记录（serial id + 分辨率），置顶组内仍按原始顺序排。
+
+## 国际化
+
+前端不引 vue-i18n。`src/i18n.js` 是一张 zh/en 对照表加一个 `reactive({ pref, lang })`：
+
+- `pref` 是用户选的三态偏好（`auto` / `zh` / `en`），界面按它点亮分段按钮；`lang` 是生效语言（`auto` 时按 `navigator.language` 解析，也就是 macOS 的设置）。`setLangPref()` 一次更新两者并写 `<html lang>`。
+- `main.js` 把 `t()` 挂成全局 `$t`——模板读 `i18n.lang` 就建立响应依赖，换语言只重渲染一次，不需要 provide/inject 或 mixin。
+- 带变量的文案一律 `{name}` 占位、整句翻译（中英文语序不同，禁止拼接）。`shortName()` 按语言剥掉通用名后缀（「内建显示器」→「内建」，"Built-in Display" → "Built-in"），型号名 U2790B 之类不动。
+- 显示器通用名（内建显示器 / Built-in Display）和「原生 / Native」标签是在 `api.js normalizeState` 里生成的，所以**语言变了必须重新 `load()`** 才会刷新名字；`load()` 的顺序也因此是**先 `getSettings` 再 `getState`**。
+
+Rust 侧只有 `src-tauri/src/lang.rs`：一个 `AtomicBool` 生效语言缓存 + `tr(zh, en)` / `tr_fill(zh, en, args)` 取词。不往每个函数穿 lang 参数（太碎）。`resolve()` 把 `"auto"` 或老设置里的缺字段展开成 `defaults read -globalDomain AppleLanguages` 的首项，`settings::effective_lang()` 是它的读盘入口。`set_lang` 的顺序是**先落盘、再按生效值 `set_active`、最后重建托盘菜单**——存的是偏好，缓存要的是生效值，反过来会把 `"auto"` 当成非 en 处理错。
+
+所有会弹到用户面前的后端错误串都是双语的。注意 `format!("...{x}")` 的内联捕获插值不能用在运行时字符串上（双语模板是变量），所以那类文案走 `tr_fill` 的 `{x}` + `.replace()`。
+
+## 检查更新
+
+`src/update.js`，纯前端比对，**不引 Tauri updater 插件**，也不自动检测、不后台轮询——只有用户在「关于」里点「检查更新」才联网。
+
+- 两个源各查一次 `releases/latest`：GitHub `WitsonX/DisplaySwitch`、Gitee `Witson/DisplaySwitch`（公开接口、无需 token、都回 CORS 头）。中文界面优先 Gitee、英文优先 GitHub，第一个源不可达就回落第二个；单次请求 8s 超时（`AbortController`）。
+- tag 先过一遍只认版本号字符的正则，再和 `package.json` 的 `version` 比（`v` 前缀、`-beta` 这类后缀不参与比较）。两源都 404 读作「暂无发布版本」、都失败读作「检查失败」，四种结果都只在那一行里显示，不弹窗。
+- **发布页地址由本模块用常量 + tag 自己拼，不采用接口返回的 `html_url`**；tag 已经过白名单正则，所以拼出来的 URL 只可能是我们自己仓库的发布页。
+- 跳转走 Rust 的 `open_url` 命令（`Command::new("open")`）。命令端再收一次口子：只放过 `https://github.com/WitsonX/DisplaySwitch/` 和 `https://gitee.com/Witson/DisplaySwitch/` 两个前缀，其余一律拒绝并返回双语错误（`is_release_page()` 有单元测试，覆盖前缀混淆和 http 降级）。
+- 发现新版后按钮变成「打开发布页」，不再触发检查；想重查一次，关掉面板重开即可（`v-if` 会销毁设置视图，状态回到「未检查」）。
+
+## 自启动
+
+`tauri-plugin-autostart`（`MacosLauncher::LaunchAgent`，底层 `auto-launch`）注册为插件后，由 Rust 侧 `get_autostart` / `set_autostart` 包一层，前端不引 `@tauri-apps/plugin-autostart`、也不需要额外 capabilities。开关**默认关闭**，开启后写 `~/Library/LaunchAgents/DisplaySwitch.plist`。
+
+`is_enabled` 直接看 plist 在不在，所以 settings.json 里不重复存一份状态——两处存同一个开关迟早对不上，用户手动删掉 plist 时也要能如实显示「未开启」。每次进设置面板都回读一次。
+
+> 开发时别顺手点开这个开关：`npm run tauri dev` 跑的是 debug 构建，注册进去的自启动路径就是 `target/debug/` 里那个，之后开机自启动的会是调试版。
+
+## 图标
+
+- **菜单栏图标**是一枚单色模板 glyph（`src-tauri/icons/tray-template.png`，36×36 = 18pt @2x），配 `icon_as_template(true)` 交给 `NSImage.isTemplate`，深色菜单栏自动描白、浅色描黑。此前直接用彩色 App 图标会被 `tray-icon` 压成 18pt，深色菜单栏下整块糊掉。形状是「两块屏斜向叠放 + 前屏一根底座横线」——没有那根横线时它等于系统的「复制」图标，会被认成快捷键指示器。
+- **App 图标**同一套 glyph（石墨底白形）。面板顶栏的「显示器」标题图标是同一份几何的内联 SVG（18 viewBox + 遮罩挖缝），设置面板「关于」的 48pt 大图标读 `src/assets/app-icon.png`。
+- 三者都由 `tools/gen_icons.swift` 从同一份路径描述生成：在仓库根目录跑 `swift tools/gen_icons.swift tools/out`，出 glyph + 1024 源图 + `src/assets/app-icon.png` + 深浅两条预览；再 `npx tauri icon tools/out/app-icon-1024.png` 重生成 icns/ico/各尺寸。
+- `src/assets/app-icon.png` 是**从 1024 画布正中裁掉四周留白**的产物（只留圆角方本体）：带留白的图落在白色卡片上会读成一层白框。`.a-icon` 的 11px 圆角正好对上裁切后图形自身的圆角（185.5/824×48 ≈ 10.8px），所以阴影顺着圆角走、四角不露馅。
+- `tauri icon` 不会动 `tray-template.png`，但新生成的 glyph 要记得手动拷进 `src-tauri/icons/`。
+
+## 命名与 bundle 标识
+
+中文名「快切屏」，英文名 DisplaySwitch，界面上中文在前。技术标识一律不动——bundle 文件名、`CFBundleName`、bundle id、LaunchAgent plist 仍是 `DisplaySwitch` / `com.displayswitch.app`，只通过 `src-tauri/Info.plist` 往生成的 Info.plist 里合并 `CFBundleDisplayName = 快切屏`（Tauri 2 会自动读取并 merge）。这样系统设置「登录项」等 macOS 界面显示中文名，而 dmg、脚本、路径不受非 ASCII 影响。
+
+## 前端双路径
+
+通过 `window.__TAURI_INTERNALS__` 检测运行环境：浏览器预览走 `src/api.js` 里内置的 mock（三屏假数据，apply 会真实改写 mock 状态，所以镜像、置顶、预设、双语都能在浏览器里点通），数据形状与真实后端完全一致。这样不装 Rust 也能评审界面。
+
+## 开发与调试
+
+环境：macOS（仅支持 macOS）+ Xcode Command Line Tools + Node.js 18+ + Rust 工具链。
+
+```bash
+npm install
+npm run tauri dev          # 开发运行（热重载）
+npm run tauri build        # 打包
+cd src-tauri && cargo test # 解析器 / 设置 / 语言 / 发布页白名单单元测试
+```
+
+- 浏览器预览：`npm run dev` 打开 http://localhost:5173，底部有「假数据」提示，不接入真实切换。
+- displayplacer 已内嵌在 `src-tauri/binaries/`（universal 二进制 + MIT LICENSE），运行时 `displayplacer_path()` 优先解析包内 `Contents/Resources/binaries/`、未命中回落 PATH，所以开发环境也可以 `brew install displayplacer` 用系统那份。
+- **不要跑 `cargo fmt`**：这个仓库不是 rustfmt-clean，跑一次会顺手重排四五个无关文件，把格式化噪声混进功能提交。新代码按周围风格手写即可。
+- 前端一律 **Options API**，不使用 `<script setup>` / Composition API。
+
+## 打包与发布
+
+- `npm run tauri build` 产物在 `src-tauri/target/release/bundle/`（`.app` 与 `.dmg`）。二进制是 universal（arm64 + x86_64）、ad-hoc 签名，**未走 Apple 公证**：首次打开提示「Apple 无法验证」是固定流程，弹窗点「完成」→「系统设置 → 隐私与安全性 → 安全性」里点「仍要打开」，只需一次。正式签名分发时 `binaries/displayplacer` 要随 App 一起签。
+- **版本号有三处要同步**：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`（外加 `src-tauri/Cargo.lock` 里 `display-switch` 那一条）。「关于」显示的和「检查更新」比对的都取 `package.json` 的 `version`，所以发布时的 Release tag 必须是 `v<version>`（如 `v1.0.0`），否则自己跟自己比不出结果。
+- 两个托管站都要建 Release：GitHub `WitsonX/DisplaySwitch`、Gitee `Witson/DisplaySwitch`（Gitee 是镜像仓库，附件与 Release 不跟着镜像走，得单独发）。任一边有 Release 之前，App 里点「检查更新」只会显示「暂无发布版本」。
+
+## 已知坑
+
+- `CGDisplayScreenSize` 在镜像态返回整个镜像组的尺寸，不能直接当单屏尺寸用。
+- 双语错误串走运行时模板，不能用 `format!` 的内联捕获插值，得用 `tr_fill`。
+- 托盘点击坐标是物理像素，窗口尺寸是逻辑点，中间必须除一次 `scale_factor`。
+- 设置视图在 380×520 下内容高 498、可视 469：方案列表为空时也要滚一点才看全「退出」按钮，任何一条已存方案都会溢出。这是固定窗口高度的必然结果，没有为了空状态去压缩已经定稿的间距。
+- 镜像屏不显示收藏星——它的分辨率由目标屏决定，收藏了也不会生效。

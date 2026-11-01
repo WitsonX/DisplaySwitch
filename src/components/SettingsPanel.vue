@@ -102,6 +102,13 @@
         <span class="a-k">{{ $t('aboutDriverKey') }}</span>
         <span class="a-v">{{ $t('aboutDriverVal') }}</span>
       </div>
+      <div class="a-row a-row-center">
+        <span class="a-k">{{ $t('updateName') }}</span>
+        <span class="a-v" :class="{ 'a-v-new': updateState === 'available' }">{{ updateText }}</span>
+        <button class="a-btn" :disabled="updateState === 'checking'" @click="onUpdate">
+          {{ $t(updateState === 'available' ? 'updateOpen' : 'updateCheck') }}
+        </button>
+      </div>
       <div class="a-row">
         <span class="a-k">{{ $t('aboutPathKey') }}</span>
         <span class="a-v a-path">~/Library/Application Support/com.displayswitch.app/presets/</span>
@@ -115,6 +122,8 @@
 <script>
 import { version } from '../../package.json'
 import appIcon from '../assets/app-icon.png'
+import { i18n, t } from '../i18n'
+import { checkForUpdate } from '../update'
 
 export default {
   name: 'SettingsPanel',
@@ -125,13 +134,17 @@ export default {
     autostart: { type: Boolean, default: false },
     langPref: { type: String, default: 'auto' }
   },
-  emits: ['delete', 'rename', 'set-pin', 'set-autostart', 'set-lang', 'quit'],
+  emits: ['delete', 'rename', 'set-pin', 'set-autostart', 'set-lang', 'quit', 'open-url'],
   data() {
     return {
       version,
       appIcon,
       renaming: null,
-      renameValue: ''
+      renameValue: '',
+      // idle / checking / upToDate / available / none / failed
+      updateState: 'idle',
+      updateLatest: '',
+      updateUrl: ''
     }
   },
   computed: {
@@ -141,6 +154,22 @@ export default {
         p,
         available: p.config.displays.every((d) => present.has(d.ctx_id))
       }))
+    },
+    updateText() {
+      switch (this.updateState) {
+        case 'checking':
+          return t('updateChecking')
+        case 'upToDate':
+          return t('updateUpToDate')
+        case 'available':
+          return t('updateAvailable', { v: this.updateLatest })
+        case 'none':
+          return t('updateNone')
+        case 'failed':
+          return t('updateFailed')
+        default:
+          return t('updateIdle')
+      }
     }
   },
   methods: {
@@ -157,6 +186,18 @@ export default {
       const name = this.renameValue.trim()
       if (name && name !== p.name) this.$emit('rename', p, name)
       this.renaming = null
+    },
+    async onUpdate() {
+      if (this.updateState === 'available') {
+        this.$emit('open-url', this.updateUrl)
+        return
+      }
+      if (this.updateState === 'checking') return
+      this.updateState = 'checking'
+      const res = await checkForUpdate(i18n.lang !== 'en', version)
+      this.updateState = res.status
+      this.updateLatest = res.latest || ''
+      this.updateUrl = res.url || ''
     }
   }
 }
@@ -373,6 +414,11 @@ export default {
   border-bottom: 0;
 }
 
+/* 更新行里有按钮，基线对齐会让按钮沉下去 */
+.a-row-center {
+  align-items: center;
+}
+
 .a-brand {
   align-items: center;
   gap: 12px;
@@ -441,6 +487,31 @@ export default {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10.5px;
   color: var(--text-2);
+}
+
+.a-v-new {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.a-btn {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--card);
+  border: 0.5px solid var(--divider);
+  border-radius: 7px;
+  padding: 3px 8px;
+  white-space: nowrap;
+}
+
+.a-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.a-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .s-quit {

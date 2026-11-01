@@ -1,6 +1,6 @@
 [package]
 name = "display-switch"
-version = "0.2.0"
+version = "1.0.0"
 description = "显示器快捷切换工具"
 edition = "2021"
 
