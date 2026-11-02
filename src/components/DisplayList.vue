@@ -31,12 +31,12 @@
         >
           <rect x="3" y="4.5" width="18" height="11.5" rx="1.5" />
           <path d="M9 20h6M12 16v4" />
+          <text v-if="d.sizeIn" class="d-in" x="12" y="10.2">{{ d.sizeIn }}</text>
         </svg>
       </div>
       <div class="d-main">
         <div class="d-line1">
           <span class="d-name">{{ d.name }}</span>
-          <span v-if="d.sizeIn" class="d-size">{{ d.sizeIn }}″</span>
           <div v-if="showRole && !useSelect" class="role-seg" @click.stop>
             <button class="seg" :class="{ on: d.role === 'main' }" @click="setRole(d, 'main')">
               {{ $t('roleMainSeg') }}
@@ -193,20 +193,20 @@ export default {
 }
 
 .d-icon {
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.04);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #555;
   flex-shrink: 0;
 }
 
 .d-icon svg {
-  width: 17px;
-  height: 17px;
+  width: 30px;
+  height: 30px;
 }
 
 .d-main {
@@ -217,7 +217,7 @@ export default {
 .d-line1 {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 20px;
 }
 
 .d-name {
@@ -231,15 +231,16 @@ export default {
   text-overflow: ellipsis;
 }
 
-.d-size {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-soft);
-  padding: 2px 7px;
-  border-radius: 5px;
-  flex-shrink: 0;
+.d-icon .d-in {
+  stroke: none;
+  fill: var(--accent);
+  font-size: 8px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-family: -apple-system, "SF Pro Text", sans-serif;
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
 }
 
 .role-select {

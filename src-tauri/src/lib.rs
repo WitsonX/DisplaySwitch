@@ -222,6 +222,14 @@ fn set_pin_favorites(app: AppHandle, pin: bool) -> Result<settings::AppSettings,
     settings::set_pin_favorites(&app, pin)
 }
 
+#[tauri::command]
+fn set_preset_order(
+    app: AppHandle,
+    order: Vec<String>,
+) -> Result<settings::AppSettings, String> {
+    settings::set_preset_order(&app, order)
+}
+
 // 语言存下来后，托盘菜单是原生控件、不会跟着网页重渲染，必须就地重建
 #[tauri::command]
 fn set_lang(app: AppHandle, lang: String) -> Result<settings::AppSettings, String> {
@@ -442,6 +450,7 @@ pub fn run() {
             get_settings,
             toggle_favorite,
             set_pin_favorites,
+            set_preset_order,
             set_lang,
             hide_panel,
             quit_app,

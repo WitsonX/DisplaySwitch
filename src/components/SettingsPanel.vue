@@ -56,9 +56,18 @@
     </div>
 
     <div class="section-label">{{ $t('groupSaved') }}</div>
-    <div class="card s-card">
+    <div class="card s-card" :class="{ dragging: !!drag }">
       <div v-if="!rows.length" class="s-empty">{{ $t('presetsEmpty') }}</div>
-      <div v-for="r in rows" :key="r.p.name" class="s-row">
+      <div
+        v-for="(r, ri) in rows"
+        :key="r.p.name"
+        class="s-row s-preset"
+        :class="{ 's-lift': drag && drag.from === ri, 'drop-before': gapAt(ri), 'drop-after': gapAt(ri + 1) && ri === rows.length - 1 }"
+        @pointerdown="rowDown(ri, $event)"
+        @pointermove="rowMove($event)"
+        @pointerup="rowUp"
+        @pointercancel="drag = null"
+      >
         <template v-if="renaming !== r.p.name">
           <div class="s-info">
             <span class="s-name">{{ r.p.name }}</span>
@@ -135,7 +144,7 @@ export default {
     autostart: { type: Boolean, default: false },
     langPref: { type: String, default: 'auto' }
   },
-  emits: ['delete', 'rename', 'set-pin', 'set-autostart', 'set-lang', 'quit', 'open-url'],
+  emits: ['delete', 'rename', 'reorder', 'set-pin', 'set-autostart', 'set-lang', 'quit', 'open-url'],
   data() {
     return {
       version,
@@ -144,6 +153,8 @@ export default {
       appIcon,
       renaming: null,
       renameValue: '',
+      // 拖拽排序中的状态：{ from, over, y0, armed }，null 表示没在拖
+      drag: null,
       // idle / checking / upToDate / available / none / failed
       updateState: 'idle',
       updateLatest: '',
@@ -193,6 +204,47 @@ export default {
       const name = this.renameValue.trim()
       if (name && name !== p.name) this.$emit('rename', p, name)
       this.renaming = null
+    },
+    rowDown(i, e) {
+      if (e.button !== 0 || this.renaming !== null) return
+      // 行里的改名/删除按钮自己管点击，不能被拖拽抢走
+      if (e.target.closest('button') || e.target.closest('input')) return
+      e.currentTarget.setPointerCapture(e.pointerId)
+      this.drag = { from: i, over: -1, y0: e.clientY, armed: false }
+    },
+    rowMove(e) {
+      const d = this.drag
+      if (!d) return
+      // 按下不动也要能正常选中文字，移动超过几像素才算拖
+      if (!d.armed && Math.abs(e.clientY - d.y0) < 4) return
+      const els = [...this.$el.querySelectorAll('.s-preset')]
+      let over = els.length
+      for (let i = 0; i < els.length; i++) {
+        const r = els[i].getBoundingClientRect()
+        if (e.clientY < r.top + r.height / 2) {
+          over = i
+          break
+        }
+      }
+      this.drag = { ...d, armed: true, over }
+    },
+    rowUp() {
+      const d = this.drag
+      this.drag = null
+      if (!d || !d.armed) return
+      // over 是「插入到第 over 行之前」，先把被拖行摘掉，插入点越过后要左移一格
+      const to = d.over > d.from ? d.over - 1 : d.over
+      if (to === d.from) return
+      const names = this.rows.map((r) => r.p.name)
+      const [moved] = names.splice(d.from, 1)
+      names.splice(to, 0, moved)
+      this.$emit('reorder', names)
+    },
+    gapAt(k) {
+      const d = this.drag
+      if (!d || d.over < 0) return false
+      if (d.over === d.from || d.over === d.from + 1) return false
+      return d.over === k
     },
     async onUpdate() {
       if (this.updateState === 'available') {
@@ -247,6 +299,47 @@ export default {
 
 .s-row:last-child {
   border-bottom: 0;
+}
+
+/* 拖动排序的行：整行可抓，抬起的那行变淡，插入位置用一条横线表示。
+   禁选要常驻：.dragging 是 pointerdown 之后下一帧才挂上的，浏览器按下那一刻已经起选了 */
+.s-preset {
+  position: relative;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.s-preset .s-input {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.s-card.dragging .s-preset {
+  cursor: grabbing;
+}
+
+.s-lift {
+  opacity: 0.4;
+}
+
+.drop-before::before,
+.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.drop-before::before {
+  top: 0;
+}
+
+.drop-after::after {
+  bottom: 0;
 }
 
 .s-info {

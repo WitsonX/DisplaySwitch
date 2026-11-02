@@ -22,26 +22,9 @@
       </template>
       <template v-else>
         <div class="title">
-          <!-- 与 tools/gen_icons.swift 的 markStacked 同一套几何（18 单位画布，y 轴向下） -->
-          <svg
-            width="17"
-            height="17"
-            viewBox="0 0 18 18"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.35"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <mask id="ds-title-knock">
-              <rect x="0" y="0" width="18" height="18" fill="#fff" />
-              <rect x="5.1" y="5.5" width="12.6" height="9.6" rx="2.2" fill="#000" />
-            </mask>
-            <rect x="1.4" y="2.4" width="8.8" height="6.2" rx="1.6" mask="url(#ds-title-knock)" />
-            <rect x="6.2" y="6.6" width="10.4" height="7.4" rx="1.6" />
-            <path d="M11.4 14v2.2M9.6 16.2h3.6" />
-          </svg>
-          <span>{{ $t('titleDisplays') }}</span>
+          <img class="title-icon" :src="appIcon" :alt="$t('appName')" />
+          <span>{{ $t('appName') }}</span>
+          <span v-if="!isEnglish" class="title-en">DisplaySwitch</span>
         </div>
         <span v-if="statusText" class="status-pill">{{ statusText }}</span>
         <button class="gear-btn" :title="$t('settings')" @click="view = 'settings'">
@@ -74,6 +57,7 @@
       :lang-pref="langPref"
       @delete="removePreset"
       @rename="renamePreset"
+      @reorder="reorderPresets"
       @set-pin="setPin"
       @set-autostart="changeAutostart"
       @set-lang="changeLang"
@@ -143,14 +127,22 @@
             :key="p.name"
             class="preset-pill"
             @click="applyPreset(p)"
-            @mouseenter="showTip(p, $event)"
+            @mouseenter="showTip(p.desc, $event)"
             @mouseleave="hideTip"
-            @focus="showTip(p, $event)"
+            @focus="showTip(p.desc, $event)"
             @blur="hideTip"
             >{{ p.name }}</button
           >
-          <button class="preset-pill preset-save" @click="toggleSave">{{ $t('savePresetBtn') }}</button>
-          <div v-if="tip" class="preset-tip" :style="{ left: tip.left + 'px' }">
+          <button
+            class="preset-pill preset-save"
+            @click="toggleSave"
+            @mouseenter="showTip($t('savePresetTip'), $event)"
+            @mouseleave="hideTip"
+            @focus="showTip($t('savePresetTip'), $event)"
+            @blur="hideTip"
+            >{{ $t('savePresetBtn') }}</button
+          >
+          <div v-if="tip" ref="tip" class="preset-tip" :style="{ left: tip.left + 'px' }">
             {{ tip.desc }}
           </div>
         </div>
@@ -168,6 +160,7 @@ import ResolutionPanel from './components/ResolutionPanel.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import Toast from './components/Toast.vue'
 import * as api from './api'
+import appIcon from './assets/app-icon.png'
 import { i18n, t, shortName, setLangPref } from './i18n'
 
 export default {
@@ -176,10 +169,12 @@ export default {
   data() {
     return {
       isMock: !api.isTauri,
+      appIcon,
       view: 'main',
       displays: [],
       selectedId: '',
       allPresets: [],
+      presetOrder: [],
       favorites: {},
       pinFavorites: true,
       autostart: false,
@@ -195,15 +190,29 @@ export default {
     langPref() {
       return i18n.pref
     },
+    isEnglish() {
+      return i18n.lang === 'en'
+    },
     isSingle() {
       return this.displays.length <= 1
     },
     presentIds() {
       return this.displays.map((d) => d.id)
     },
+    // 拖过的顺序在前，没进过顺序表的（刚存的方案）保持读盘顺序跟在后面
+    orderedPresets() {
+      const rank = (name, i) => {
+        const k = this.presetOrder.indexOf(name)
+        return k < 0 ? this.presetOrder.length + i : k
+      }
+      return this.allPresets
+        .map((p, i) => ({ p, k: rank(p.name, i) }))
+        .sort((a, b) => a.k - b.k)
+        .map((x) => x.p)
+    },
     // 预设描述每次渲染现算，切换语言后不用重新读盘就能跟着变
     describedPresets() {
-      return this.allPresets.map((p) => ({ ...p, desc: this.descOf(p.config) }))
+      return this.orderedPresets.map((p) => ({ ...p, desc: this.descOf(p.config) }))
     },
     presets() {
       const present = new Set(this.presentIds)
@@ -311,7 +320,18 @@ export default {
     applySettings(s) {
       this.favorites = s.favorites || {}
       this.pinFavorites = s.pinFavorites !== false
+      this.presetOrder = s.presetOrder || []
       setLangPref(s.lang || 'auto')
+    },
+    async reorderPresets(names) {
+      const prev = this.presetOrder
+      this.presetOrder = names
+      try {
+        this.applySettings(await api.setPresetOrder(names))
+      } catch (e) {
+        this.presetOrder = prev
+        this.showToast(t('presetOrderError', { e }))
+      }
     },
     async changeLang(pref) {
       if (pref === i18n.pref) return
@@ -491,14 +511,20 @@ export default {
       me.scaling = m.scaling !== undefined ? m.scaling : me.scaling
       this.pushDraft(draft, t('resSet', { name: display.name, label: m.label }))
     },
-    showTip(p, e) {
+    showTip(desc, e) {
       const el = e.currentTarget
       const pill = el.getBoundingClientRect()
       const bar = el.closest('.preset-bar').getBoundingClientRect()
-      const half = 132
-      const center = pill.left - bar.left + pill.width / 2
-      const maxLeft = Math.max(half, bar.width - half)
-      this.tip = { desc: p.desc, left: Math.min(Math.max(center, half), maxLeft) }
+      this.tip = { desc, left: pill.left - bar.left + pill.width / 2, barWidth: bar.width }
+      // 气泡宽度要渲染了才知道，所以先居中再用真实半宽夹回条内
+      this.$nextTick(this.clampTip)
+    },
+    clampTip() {
+      const el = this.$refs.tip
+      if (!el || !this.tip) return
+      const half = el.getBoundingClientRect().width / 2
+      const maxLeft = Math.max(half, this.tip.barWidth - half)
+      this.tip.left = Math.min(Math.max(this.tip.left, half), maxLeft)
     },
     hideTip() {
       this.tip = null
@@ -515,6 +541,10 @@ export default {
     async removePreset(p) {
       try {
         await api.deletePreset(p.name)
+        // 顺手把这条从顺序表里摘掉，免得 setting.json 攒垃圾名字
+        if (this.presetOrder.includes(p.name)) {
+          await api.setPresetOrder(this.presetOrder.filter((n) => n !== p.name))
+        }
         this.showToast(t('presetDeleted', { name: p.name }))
         await this.load()
       } catch (e) {
@@ -527,6 +557,12 @@ export default {
       try {
         await api.savePreset(name, p.config)
         await api.deletePreset(p.name)
+        // 改名不该让方案跳出原来的位置，顺序表里原位换名
+        if (this.presetOrder.includes(p.name)) {
+          await api.setPresetOrder(
+            this.presetOrder.map((n) => (n === p.name ? name : n))
+          )
+        }
         this.showToast(t('presetRenamed', { name }))
         await this.load()
       } catch (e) {
@@ -620,8 +656,16 @@ function pretty(res) {
   color: var(--text-1);
 }
 
-.title svg {
-  color: var(--accent);
+.title-icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.title-en {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-2);
 }
 
 .status-pill {
@@ -723,6 +767,15 @@ function pretty(res) {
   flex: 1 1 320px;
   min-width: 270px;
   align-self: flex-start;
+}
+
+/* 名字短就别占满：按内容收宽，名字长才涨到上限，再长由 .d-name 省略号截断。
+   243px = 右列原本的 233px + 10px 列间距，即最长名字下左右宽度与改动前完全一致。 */
+.panel-body:not(.single) .col-left {
+  flex: 0 1 auto;
+  width: max-content;
+  min-width: 0;
+  max-width: calc(100% - 243px);
 }
 
 .col-right {

@@ -35,6 +35,7 @@ const zh = {
   close: '关闭',
   retry: '重试',
 
+  appName: '快切屏',
   titleDisplays: '显示器',
   titleResolutions: '分辨率',
   titlePresets: '场景预设',
@@ -107,13 +108,15 @@ const zh = {
   updateOpen: '打开发布页',
   quitApp: '退出快切屏',
 
-  savePresetBtn: '+ 保存当前配置…',
+  savePresetBtn: '+ 保存',
+  savePresetTip: '存下当前角色与分辨率，之后一键恢复',
   presetPlaceholder: '预设名称，如：工位-扩展',
   mockNote: '浏览器预览 · 假数据 · 未接入真实切换',
 
   loadError: '无法读取显示器状态：{e}',
   favError: '收藏失败：{e}',
   setPinError: '设置失败：{e}',
+  presetOrderError: '排序保存失败：{e}',
   langError: '语言设置失败：{e}',
   autostartReadError: '读取自启动状态失败：{e}',
   autostartSetError: '自启动设置失败：{e}',
@@ -144,6 +147,7 @@ const en = {
   close: 'Close',
   retry: 'Retry',
 
+  appName: 'DisplaySwitch',
   titleDisplays: 'Displays',
   titleResolutions: 'Resolution',
   titlePresets: 'Scene presets',
@@ -215,13 +219,15 @@ const en = {
   updateOpen: 'View release',
   quitApp: 'Quit DisplaySwitch',
 
-  savePresetBtn: '+ Save current setup…',
+  savePresetBtn: '+ Save',
+  savePresetTip: 'Store the current roles and resolutions',
   presetPlaceholder: 'Setup name, e.g. Desk - Extended',
   mockNote: 'Browser preview · mock data · no real switching',
 
   loadError: 'Cannot read display state: {e}',
   favError: 'Could not star: {e}',
   setPinError: 'Could not change setting: {e}',
+  presetOrderError: 'Could not save the order: {e}',
   langError: 'Could not change language: {e}',
   autostartReadError: 'Could not read login item state: {e}',
   autostartSetError: 'Could not change login item: {e}',

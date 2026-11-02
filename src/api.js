@@ -168,7 +168,13 @@ export async function deletePreset(name) {
   if (i >= 0) mockPresets.splice(i, 1)
 }
 
-const mockSettings = { favorites: {}, pinFavorites: true, autostart: false, lang: 'auto' }
+const mockSettings = {
+  favorites: {},
+  pinFavorites: true,
+  autostart: false,
+  lang: 'auto',
+  presetOrder: [],
+}
 
 export async function getSettings() {
   if (isTauri) return invoke('get_settings')
@@ -188,6 +194,13 @@ export async function toggleFavorite(displayId, res) {
 export async function setPinFavorites(pin) {
   if (isTauri) return invoke('set_pin_favorites', { pin })
   mockSettings.pinFavorites = pin
+  return JSON.parse(JSON.stringify(mockSettings))
+}
+
+// 方案顺序：整份覆盖，空数组表示「没拖过，按读盘顺序」
+export async function setPresetOrder(order) {
+  if (isTauri) return invoke('set_preset_order', { order })
+  mockSettings.presetOrder = order.slice()
   return JSON.parse(JSON.stringify(mockSettings))
 }
 

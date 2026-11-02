@@ -13,6 +13,8 @@ pub struct AppSettings {
     pub pin_favorites: bool,
     /// 语言偏好："auto" / "zh" / "en"；None（老设置没写过）等同于 "auto"
     pub lang: Option<String>,
+    /// 方案名称的顺序。没拖过就是空数组，此时前端保持读盘顺序
+    pub preset_order: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -22,6 +24,7 @@ struct Stored {
     // 缺省视为 true：老文件没写过这个字段时保持「收藏置顶」的默认行为
     pin_favorites: Option<bool>,
     lang: Option<String>,
+    preset_order: Option<Vec<String>>,
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -73,6 +76,7 @@ fn public(stored: Stored) -> AppSettings {
         favorites: stored.favorites,
         pin_favorites: stored.pin_favorites.unwrap_or(true),
         lang: stored.lang,
+        preset_order: stored.preset_order.unwrap_or_default(),
     }
 }
 
@@ -114,6 +118,14 @@ pub fn set_lang(app: &AppHandle, lang: String) -> Result<AppSettings, String> {
     Ok(public(stored))
 }
 
+/// 方案顺序：拖拽排序后整份覆盖，前端传当前看到的全部名称
+pub fn set_preset_order(app: &AppHandle, order: Vec<String>) -> Result<AppSettings, String> {
+    let mut stored = load(app);
+    stored.preset_order = Some(order);
+    store(app, &stored)?;
+    Ok(public(stored))
+}
+
 /// 生效语言：显式选过 zh/en 就用选的，auto（或没选过）跟随系统；托盘菜单在启动时按它构建
 pub fn effective_lang(app: &AppHandle) -> String {
     lang::resolve(load(app).lang.as_deref())
@@ -140,5 +152,18 @@ mod tests {
     fn chosen_lang_is_kept() {
         let stored: Stored = serde_json::from_str(r#"{"favorites":{},"lang":"en"}"#).unwrap();
         assert_eq!(public(stored).lang.as_deref(), Some("en"));
+    }
+
+    #[test]
+    fn missing_order_field_reads_as_empty() {
+        let stored: Stored = serde_json::from_str(r#"{"favorites":{}}"#).unwrap();
+        assert!(public(stored).preset_order.is_empty());
+    }
+
+    #[test]
+    fn chosen_order_is_kept() {
+        let stored: Stored =
+            serde_json::from_str(r#"{"favorites":{},"presetOrder":["收回","借出"]}"#).unwrap();
+        assert_eq!(public(stored).preset_order, vec!["收回", "借出"]);
     }
 }
