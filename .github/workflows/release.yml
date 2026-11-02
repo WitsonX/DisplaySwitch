@@ -96,3 +96,21 @@ jobs:
           prerelease: false
           includeUpdaterArtifacts: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+
+      # Tauri 只对 Mach-O 打链接器 ad-hoc 戳是不够的：那样 Info.plist 和 Resources
+      # 没被封存，Gatekeeper 会判「已损坏」，连「仍要打开」都不给。见 tauri.conf.json 的 signingIdentity。
+      - name: Verify shipped app is bundle-signed
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="$(ls src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg | head -1)"
+          mnt="$(mktemp -d)"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mnt" "$dmg" >/dev/null
+          trap 'hdiutil detach "$mnt" -quiet' EXIT
+          codesign --verify --deep --strict --verbose=2 "$mnt/DisplaySwitch.app"
+          info="$(codesign -dvvv "$mnt/DisplaySwitch.app" 2>&1)"
+          echo "$info" | grep -q "Sealed Resources version=" || {
+            echo "::error::Resources 未封存，用户会看到「已损坏，无法打开」"; exit 1; }
+          if echo "$info" | grep -q "linker-signed"; then
+            echo "::error::产物只有链接器 ad-hoc 签名，缺少 bundle 签名"; exit 1; fi
+          echo "签名校验通过：$(echo "$info" | grep -E '^flags=')"

@@ -32,6 +32,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": false
+    },
     "resources": [
       "binaries/displayplacer",
       "binaries/displayplacer-LICENSE"
