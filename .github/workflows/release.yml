@@ -94,7 +94,7 @@ jobs:
             国内可直接从 Gitee 发行版下载：https://gitee.com/Witson/DisplaySwitch/releases （镜像仓库，Release 与附件不跟着镜像走，两边分别发布）。
           releaseDraft: true
           prerelease: false
-          includeUpdaterArtifacts: false
+          includeUpdaterJson: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
       # Tauri 只对 Mach-O 打链接器 ad-hoc 戳是不够的：那样 Info.plist 和 Resources
@@ -113,4 +113,4 @@ jobs:
             echo "::error::Resources 未封存，用户会看到「已损坏，无法打开」"; exit 1; }
           if echo "$info" | grep -q "linker-signed"; then
             echo "::error::产物只有链接器 ad-hoc 签名，缺少 bundle 签名"; exit 1; fi
-          echo "签名校验通过：$(echo "$info" | grep -E '^flags=')"
+          echo "签名校验通过：$(echo "$info" | grep -E 'flags=')"
