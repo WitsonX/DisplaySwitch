@@ -43,6 +43,18 @@
       </label>
       <label class="s-row s-toggle-row">
         <span class="s-label">
+          <span class="s-name">{{ $t('presetFirstName') }}</span>
+          <span class="s-desc">{{ $t('presetFirstDesc') }}</span>
+        </span>
+        <input
+          type="checkbox"
+          class="s-switch"
+          :checked="presetFirst"
+          @change="$emit('set-preset-first', $event.target.checked)"
+        />
+      </label>
+      <label class="s-row s-toggle-row">
+        <span class="s-label">
           <span class="s-name">{{ $t('pinName') }}</span>
           <span class="s-desc">{{ $t('pinDesc') }}</span>
         </span>
@@ -141,10 +153,11 @@ export default {
     presets: { type: Array, required: true },
     present: { type: Array, required: true },
     pinFavorites: { type: Boolean, default: true },
+    presetFirst: { type: Boolean, default: false },
     autostart: { type: Boolean, default: false },
     langPref: { type: String, default: 'auto' }
   },
-  emits: ['delete', 'rename', 'reorder', 'set-pin', 'set-autostart', 'set-lang', 'quit', 'open-url'],
+  emits: ['delete', 'rename', 'reorder', 'set-pin', 'set-preset-first', 'set-autostart', 'set-lang', 'quit', 'open-url'],
   data() {
     return {
       version,

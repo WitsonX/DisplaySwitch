@@ -15,6 +15,8 @@ pub struct AppSettings {
     pub lang: Option<String>,
     /// 方案名称的顺序。没拖过就是空数组，此时前端保持读盘顺序
     pub preset_order: Vec<String>,
+    /// 预设场景优先：把方案排到主面板最前面并放大按钮，默认关（沿用原布局）
+    pub preset_first: bool,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -25,6 +27,8 @@ struct Stored {
     pin_favorites: Option<bool>,
     lang: Option<String>,
     preset_order: Option<Vec<String>>,
+    // 缺省视为 false：「预设场景优先」是后加的开关，老设置应保持原布局
+    preset_first: Option<bool>,
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -77,6 +81,7 @@ fn public(stored: Stored) -> AppSettings {
         pin_favorites: stored.pin_favorites.unwrap_or(true),
         lang: stored.lang,
         preset_order: stored.preset_order.unwrap_or_default(),
+        preset_first: stored.preset_first.unwrap_or(false),
     }
 }
 
@@ -126,6 +131,13 @@ pub fn set_preset_order(app: &AppHandle, order: Vec<String>) -> Result<AppSettin
     Ok(public(stored))
 }
 
+pub fn set_preset_first(app: &AppHandle, on: bool) -> Result<AppSettings, String> {
+    let mut stored = load(app);
+    stored.preset_first = Some(on);
+    store(app, &stored)?;
+    Ok(public(stored))
+}
+
 /// 生效语言：显式选过 zh/en 就用选的，auto（或没选过）跟随系统；托盘菜单在启动时按它构建
 pub fn effective_lang(app: &AppHandle) -> String {
     lang::resolve(load(app).lang.as_deref())
@@ -165,5 +177,18 @@ mod tests {
         let stored: Stored =
             serde_json::from_str(r#"{"favorites":{},"presetOrder":["收回","借出"]}"#).unwrap();
         assert_eq!(public(stored).preset_order, vec!["收回", "借出"]);
+    }
+
+    #[test]
+    fn preset_first_defaults_to_off() {
+        let stored: Stored = serde_json::from_str(r#"{"favorites":{}}"#).unwrap();
+        assert!(!public(stored).preset_first);
+    }
+
+    #[test]
+    fn chosen_preset_first_is_kept() {
+        let stored: Stored =
+            serde_json::from_str(r#"{"favorites":{},"presetFirst":true}"#).unwrap();
+        assert!(public(stored).preset_first);
     }
 }

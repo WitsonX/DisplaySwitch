@@ -174,6 +174,7 @@ const mockSettings = {
   autostart: false,
   lang: 'auto',
   presetOrder: [],
+  presetFirst: false,
 }
 
 export async function getSettings() {
@@ -204,6 +205,13 @@ export async function setPresetOrder(order) {
   return JSON.parse(JSON.stringify(mockSettings))
 }
 
+// 预设场景优先：方案排到主面板最前，按钮和字号一起放大
+export async function setPresetFirst(on) {
+  if (isTauri) return invoke('set_preset_first', { on })
+  mockSettings.presetFirst = on
+  return JSON.parse(JSON.stringify(mockSettings))
+}
+
 export async function setLang(lang) {
   if (isTauri) return invoke('set_lang', { lang })
   mockSettings.lang = lang
@@ -212,6 +220,19 @@ export async function setLang(lang) {
 
 export async function quitApp() {
   if (isTauri) return invoke('quit_app')
+}
+
+// 快速切换：外部程序带 -quick-switch / -qs 冷启动时后端置位，
+// 前端挂载时消费一次，true 表示这次要以「预设场景优先 + 倒计时退出」形态弹面板
+export async function quickSwitchLaunched() {
+  if (isTauri) return invoke('quick_switch_launched')
+  return false
+}
+
+// 锁住「失焦即隐藏」：快速切换里点场景会触发显示器重排、面板瞬间失焦，
+// 不锁就看不到倒计时也点不了取消；倒计时结束或取消时解锁
+export async function setPanelLock(locked) {
+  if (isTauri) return invoke('set_panel_lock', { locked })
 }
 
 // 自启动的真实状态在系统的 LaunchAgent 注册里，不跟 settings.json 混存

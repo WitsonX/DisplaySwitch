@@ -53,12 +53,14 @@
       :presets="describedPresets"
       :present="presentIds"
       :pin-favorites="pinFavorites"
+      :preset-first="presetFirst"
       :autostart="autostart"
       :lang-pref="langPref"
       @delete="removePreset"
       @rename="renamePreset"
       @reorder="reorderPresets"
       @set-pin="setPin"
+      @set-preset-first="changePresetFirst"
       @set-autostart="changeAutostart"
       @set-lang="changeLang"
       @open-url="openUrl"
@@ -70,7 +72,7 @@
       <button class="retry-btn" @click="load">{{ $t('retry') }}</button>
     </div>
 
-    <div v-else class="panel-body" :class="{ single: isSingle }">
+    <div v-else class="panel-body" :class="{ single: isSingle, 'preset-first': presetFirstLayout }">
       <div class="cols">
         <div class="col col-left">
           <div class="section-label">{{ $t('titleDisplays') }}</div>
@@ -150,7 +152,17 @@
       </div>
     </div>
 
-    <Toast v-if="toast" :message="toast" />
+    <div v-if="quickFooter" class="quick-footer">
+      <template v-if="countdown > 0">
+        <button class="quick-btn" @click="closePanel">{{ $t('hidePanel') }}</button>
+        <button class="quick-btn quick-quit" @click="quitApp">
+          {{ $t('autoQuitIn', { n: countdown }) }}
+        </button>
+      </template>
+      <span v-else class="quick-hint">{{ $t('quickSwitchHint') }}</span>
+    </div>
+
+    <Toast v-if="toast" :message="toast" :raised="quickFooter" />
   </div>
 </template>
 
@@ -177,6 +189,10 @@ export default {
       presetOrder: [],
       favorites: {},
       pinFavorites: true,
+      presetFirst: false,
+      quickSwitch: false,
+      countdown: 0,
+      countdownTimer: null,
       autostart: false,
       saving: false,
       newPresetName: '',
@@ -195,6 +211,13 @@ export default {
     },
     isSingle() {
       return this.displays.length <= 1
+    },
+    // 快速切换会话里无视用户开关，强制预设场景优先布局
+    presetFirstLayout() {
+      return this.presetFirst || this.quickSwitch
+    },
+    quickFooter() {
+      return this.quickSwitch && this.view === 'main'
     },
     presentIds() {
       return this.displays.map((d) => d.id)
@@ -275,6 +298,10 @@ export default {
   mounted() {
     this.load()
     if (api.isTauri) {
+      // 冷启动带 -quick-switch / -qs：后端已弹窗，这里消费标志进入快速切换形态
+      api.quickSwitchLaunched().then((qs) => {
+        if (qs) this.enterQuickSwitch()
+      })
       import('@tauri-apps/api/event').then(({ listen }) => {
         listen('displays-changed', () => this.load())
         listen('tray-view', (e) => {
@@ -321,6 +348,7 @@ export default {
       this.favorites = s.favorites || {}
       this.pinFavorites = s.pinFavorites !== false
       this.presetOrder = s.presetOrder || []
+      this.presetFirst = s.presetFirst === true
       setLangPref(s.lang || 'auto')
     },
     async reorderPresets(names) {
@@ -357,6 +385,13 @@ export default {
     async setPin(pin) {
       try {
         this.applySettings(await api.setPinFavorites(pin))
+      } catch (e) {
+        this.showToast(t('setPinError', { e }))
+      }
+    },
+    async changePresetFirst(on) {
+      try {
+        this.applySettings(await api.setPresetFirst(on))
       } catch (e) {
         this.showToast(t('setPinError', { e }))
       }
@@ -444,13 +479,20 @@ export default {
       }, 2000)
     },
     async pushDraft(draft, okMsg) {
+      // 切换会重排显示器、面板瞬间失焦，锁住到倒计时结束
+      if (this.quickSwitch) api.setPanelLock(true)
+      let applied = false
       try {
         await api.applyConfig(this.draftToConfig(draft))
         this.showToast(this.isMock ? `${okMsg}${t('demoSuffix')}` : okMsg)
+        applied = true
       } catch (e) {
         this.showToast(t('applyError', { e }))
+        if (this.quickSwitch) api.setPanelLock(false)
       }
       await this.load()
+      // 只有真切换成功才倒数：失败了还要用户看错误、重试，不该顺手把 App 收掉
+      if (applied) this.startCountdown()
     },
     setRole(d, val) {
       const draft = this.toDraft()
@@ -530,12 +572,15 @@ export default {
       this.tip = null
     },
     async applyPreset(p) {
+      if (this.quickSwitch) api.setPanelLock(true)
       try {
         await api.applyConfig(p.config)
         this.showToast(t('presetApplied', { name: p.name }))
         await this.load()
+        this.startCountdown()
       } catch (e) {
         this.showToast(t('presetApplyError', { e }))
+        if (this.quickSwitch) api.setPanelLock(false)
       }
     },
     async removePreset(p) {
@@ -597,7 +642,34 @@ export default {
         this.showToast(t('presetSaveError', { e }))
       }
     },
+    enterQuickSwitch() {
+      this.quickSwitch = true
+      this.view = 'main'
+      this.load()
+    },
+    // 应用成功（预设/分辨率/角色）后倒计时 3 秒退出；取消则关面板、程序留在托盘
+    startCountdown() {
+      if (!this.quickSwitch || this.countdown > 0) return
+      this.countdown = 3
+      this.countdownTimer = setInterval(() => {
+        this.countdown -= 1
+        if (this.countdown <= 0) {
+          this.stopCountdown()
+          this.quitApp()
+        }
+      }, 1000)
+    },
+    stopCountdown() {
+      if (this.countdownTimer) {
+        clearInterval(this.countdownTimer)
+        this.countdownTimer = null
+      }
+      this.countdown = 0
+      api.setPanelLock(false)
+    },
     async closePanel() {
+      this.stopCountdown()
+      this.quickSwitch = false
       if (api.isTauri) {
         const { invoke } = await import('@tauri-apps/api/core')
         try {
@@ -643,7 +715,7 @@ function pretty(res) {
 .panel-header {
   display: flex;
   align-items: center;
-  padding: 14px 16px 10px;
+  padding: 14px 16px 8px;
   flex-shrink: 0;
 }
 
@@ -657,8 +729,8 @@ function pretty(res) {
 }
 
 .title-icon {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   flex: none;
 }
 
@@ -837,13 +909,60 @@ function pretty(res) {
 }
 
 .preset-save {
-  border-style: dashed;
   color: var(--accent);
   background: transparent;
+  border-color: transparent;
 }
 
 .preset-save:hover {
   background: var(--accent-soft);
+}
+
+/* 预设场景优先：方案条整块提到最前面，按钮和字号一起放大；关掉时一切回到原样 */
+.panel-body.preset-first .preset-area {
+  order: -1;
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.panel-body.preset-first .preset-bar {
+  gap: 8px;
+}
+
+.panel-body.preset-first .preset-pill {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 9px 16px;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+}
+
+/* 「+ 保存」是次要动作，跟着放大反而抢掉场景的注意力，字号和内边距留在默认档 */
+.panel-body.preset-first .preset-save {
+  font-size: 12px;
+  padding: 6px 13px;
+  border-color: transparent;
+}
+
+/* 方案条提到顶上以后，气泡再往上就顶到标题栏了，改到下方 */
+.panel-body.preset-first .preset-tip {
+  top: calc(100% + 7px);
+  bottom: auto;
+}
+
+.panel-body.preset-first .save-input {
+  font-size: 14px;
+  padding: 8px 11px;
+}
+
+.panel-body.preset-first .save-ok,
+.panel-body.preset-first .save-cancel {
+  font-size: 14px;
+  padding: 8px 12px;
+}
+
+.panel-body.preset-first .preset-tip {
+  font-size: 13px;
+  max-width: 300px;
 }
 
 .save-box {
@@ -889,6 +1008,50 @@ function pretty(res) {
   font-size: 10px;
   color: var(--text-2);
   padding-top: 6px;
+}
+
+.quick-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-top: 0.5px solid var(--divider);
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.quick-hint {
+  color: var(--text-2);
+}
+
+.quick-btn {
+  font-size: 13px;
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: 0.5px solid var(--divider);
+  background: var(--card);
+  color: var(--text-1);
+}
+
+.quick-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* 退出按钮带倒数，做成主按钮：数字用等宽，3→2→1 不跳位 */
+.quick-quit {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-quit:hover {
+  background: var(--accent);
+  color: #fff;
+  filter: brightness(1.08);
 }
 
 .error-box {

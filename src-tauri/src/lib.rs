@@ -10,7 +10,7 @@ use std::os::raw::c_void;
 use std::process::Command;
 #[cfg(target_os = "macos")]
 use std::sync::atomic::AtomicU64;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tauri::Emitter;
 use tauri::{
     image::Image,
@@ -25,6 +25,26 @@ const PANEL_HEIGHT: f64 = 520.0;
 
 // 单屏时面板用窄窗口；计数由 get_state 刷新，托盘点击时据此选宽度
 static LAST_DISPLAY_COUNT: AtomicUsize = AtomicUsize::new(2);
+
+// 快速切换：外部程序（如 MarkLock 便签）带 -quick-switch / -qs 启动时，面板直接进
+// 「预设场景优先 + 应用后倒计时退出」。冷启动路径由 argv 置位、前端挂载后
+// 一次取走；应用已在托盘驻留时，第二次带参启动由单实例插件转发，只普通弹面板。
+static QUICK_SWITCH: AtomicBool = AtomicBool::new(false);
+const QUICK_SWITCH_ARGS: [&str; 2] = ["-quick-switch", "-qs"];
+
+fn is_quick_switch_arg(arg: &str) -> bool {
+    QUICK_SWITCH_ARGS.contains(&arg)
+}
+
+// 快速切换期间（点下场景到倒计时结束）禁止「失焦即隐藏」：displayplacer 重排
+// 显示器会让面板瞬间失焦，不锁住的话用户看不到倒计时，也没法点取消
+static PANEL_LOCK: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+fn set_panel_lock(locked: bool) -> Result<(), String> {
+    PANEL_LOCK.store(locked, Ordering::SeqCst);
+    Ok(())
+}
 
 // 合盖/开盖/插拔会连续触发多次重配置回调，用序号防抖：800ms 内无新变化才通知前端
 #[cfg(target_os = "macos")]
@@ -230,6 +250,11 @@ fn set_preset_order(
     settings::set_preset_order(&app, order)
 }
 
+#[tauri::command]
+fn set_preset_first(app: AppHandle, on: bool) -> Result<settings::AppSettings, String> {
+    settings::set_preset_first(&app, on)
+}
+
 // 语言存下来后，托盘菜单是原生控件、不会跟着网页重渲染，必须就地重建
 #[tauri::command]
 fn set_lang(app: AppHandle, lang: String) -> Result<settings::AppSettings, String> {
@@ -372,14 +397,65 @@ fn toggle_panel_at(app: &AppHandle, position: PhysicalPosition<f64>) {
     show_panel(app, "main");
 }
 
+// 快速切换入口：宽度跟随单/多屏（顺带刷新托盘用的计数），主屏居中弹出。
+// 托盘弹窗有托盘坐标做锚点，这里没有，居中比固定角落好找
+fn show_quick_switch(app: &AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let count = state::read_state(&displayplacer_path(app))
+        .map(|st| st.displays.len())
+        .unwrap_or(2);
+    LAST_DISPLAY_COUNT.store(count, Ordering::SeqCst);
+    let width = if count <= 1 {
+        SINGLE_PANEL_WIDTH
+    } else {
+        PANEL_WIDTH
+    };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let _ = window.set_size(LogicalSize::new(width, PANEL_HEIGHT));
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let pos = monitor.position();
+        let size = monitor.size();
+        let x = (pos.x as f64 + (size.width as f64 - width * scale) / 2.0).max(0.0);
+        let y = (pos.y as f64 + (size.height as f64 - PANEL_HEIGHT * scale) / 2.0).max(0.0);
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
+// 前端挂载时调用：消费启动参数置的位。返回 true 表示这次是快速切换启动
+#[tauri::command]
+fn quick_switch_launched(app: AppHandle) -> Result<bool, String> {
+    let was = QUICK_SWITCH.swap(false, Ordering::SeqCst);
+    if was {
+        show_quick_switch(&app);
+    }
+    Ok(was)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 冷启动路径：argv 里带快速切换参数就置位，等前端挂载后弹面板
+    QUICK_SWITCH.store(
+        std::env::args_os()
+            .any(|a| is_quick_switch_arg(&a.to_string_lossy())),
+        Ordering::SeqCst,
+    );
     tauri::Builder::default()
         // 自启动默认关闭，仅在用户在设置里勾选时写 ~/Library/LaunchAgents 下的 plist
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // 已在托盘驻留时再次带参启动：第二次进程把参数转给首个实例后自行退出。
+        // 这种情形只当普通唤出来用——直接显示面板，不进快速切换
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|a| is_quick_switch_arg(a)) {
+                show_panel(app, "main");
+            }
+        }))
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -437,7 +513,9 @@ pub fn run() {
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let WindowEvent::Focused(false) = event {
-                    let _ = window.hide();
+                    if !PANEL_LOCK.load(Ordering::SeqCst) {
+                        let _ = window.hide();
+                    }
                 }
             }
         })
@@ -451,9 +529,12 @@ pub fn run() {
             toggle_favorite,
             set_pin_favorites,
             set_preset_order,
+            set_preset_first,
             set_lang,
             hide_panel,
             quit_app,
+            quick_switch_launched,
+            set_panel_lock,
             get_autostart,
             set_autostart,
             open_url

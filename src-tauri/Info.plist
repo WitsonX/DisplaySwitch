@@ -4,5 +4,10 @@
 <dict>
   <key>CFBundleDisplayName</key>
   <string>快切屏</string>
+  <!-- 纯托盘工具：让 LaunchServices 在进程登记时就按后台 Agent 对待，
+       不进 Dock、也不占 ⌘Tab。运行时 set_activation_policy 太晚（首次启动
+       会闪一下 Dock 图标），而且第二次双击的 reopen 事件会把策略打回 Regular -->
+  <key>LSUIElement</key>
+  <true/>
 </dict>
 </plist>

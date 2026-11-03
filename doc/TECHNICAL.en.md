@@ -10,8 +10,8 @@ Everything user-facing lives in the [README](../README.en.md). This file is only
 
 - **Window**: label `main`, 600×520 logical points, `decorations:false` + `transparent:true` + `alwaysOnTop` + `skipTaskbar` + `visible:false` (`src-tauri/tauri.conf.json`). With a single display attached the width narrows to 380 (`SINGLE_PANEL_WIDTH`) — the width is chosen at tray-click time from `LAST_DISPLAY_COUNT`, which every `get_state` refreshes, so plugging displays in or out does not require restarting the app to get the right width.
 - **Look**: `window-vibrancy`'s `apply_vibrancy(NSVisualEffectMaterial::HudWindow)` — combined with the rounded cards, that is the macOS HUD frosted-glass material.
-- **No Dock presence**: `set_activation_policy(Accessory)` in `setup`, so there is no Dock icon and no ⌘Tab entry — just the menu bar glyph.
-- **Hides on blur**: `WindowEvent::Focused(false)` → `hide_panel_window()`. Clicking anywhere outside the panel, or switching apps, dismisses it; the × in the header calls the `hide_panel` command for the same effect.
+- **No Dock presence**: `LSUIElement = true` in `src-tauri/Info.plist` makes LaunchServices register the process as a background agent at check-in, so there is no Dock icon and no ⌘Tab entry — just the menu bar glyph. The `set_activation_policy(Accessory)` call in `setup` stays as the fallback for the bare `cargo run` binary, which never reads an Info.plist (in that mode the Dock icon still flashes once at startup — normal).
+- **Hides on blur**: `WindowEvent::Focused(false)` → `hide_panel_window()`. Clicking anywhere outside the panel, or switching apps, dismisses it; the × in the header calls the `hide_panel` command for the same effect. The one exception is quick switch, where `PANEL_LOCK` holds it open — see "External launch: quick switch".
 - **Tray**: `TrayIconBuilder::with_id("main-tray")` with `icon_as_template(true)`. Left click toggles the panel, right click opens the native menu (Show Panel / Settings… / Quit). A native menu does not re-render with the webview, so changing language rebuilds it in place via `tray_by_id("main-tray").set_menu(Some(tray_menu(app)))`.
 - **Positioning**: the click coordinates reported by the tray are physical pixels, so they are divided by `window.scale_factor()` before positioning; window size itself is expressed in logical points. Mixing the two is what makes Retina 2x placement go wrong.
 - **Hotplug**: `CGDisplayRegisterReconfigurationCallback` registered in `setup`. Lid close/open and plug/unplug fire the callback several times in a row, so an incrementing sequence number gives an 800ms debounce and only one `emit("displays-changed")`; the frontend `listen`s to it and calls `load()`, which also runs whenever the panel regains focus.
@@ -27,7 +27,7 @@ Everything user-facing lives in the [README](../README.en.md). This file is only
 | `save_preset` | `name`, `config` | — | Stores a whole configuration |
 | `list_presets` | — | `PresetEntry[]` | Lists every setup, including ones whose displays are unplugged |
 | `delete_preset` | `name` | — | Deletes one |
-| `get_settings` | — | `AppSettings` | Favorites, pin toggle, language preference |
+| `get_settings` | — | `AppSettings` | Favorites, pin toggle, language preference, setup order, presets-first toggle |
 | `toggle_favorite` | `displayId`, `res` | `AppSettings` | Stars/unstars one mode on one display |
 | `set_pin_favorites` | `pin` | `AppSettings` | Whether favorites float to the top |
 | `set_lang` | `lang` | `AppSettings` | Persists the preference and rebuilds the tray menu |
@@ -36,8 +36,12 @@ Everything user-facing lives in the [README](../README.en.md). This file is only
 | `get_autostart` | — | `bool` | Reads the real LaunchAgent registration state |
 | `set_autostart` | `enabled` | `bool` | Enables/disables login item, returns final state |
 | `open_url` | `url` | — | Release pages only — see "Checking for updates" |
+| `set_preset_order` | `order` | `AppSettings` | Overwrites the setup order after a drag; an empty array means "never dragged, use the on-disk order" |
+| `set_preset_first` | `on` | `AppSettings` | Saved-presets-first toggle |
+| `quick_switch_launched` | — | `bool` | Consumes the launch-argument flag when the frontend mounts (read once, then cleared); when true the backend also sizes the panel by display count and opens it centered |
+| `set_panel_lock` | `locked` | — | Blocks/allows the hide-on-blur behaviour, used during the quick-switch countdown |
 
-The four settings commands (`get_settings` / `toggle_favorite` / `set_pin_favorites` / `set_lang`) **always return the full, current settings object**; the frontend never guesses. That removes a whole class of "the UI thinks it changed but the disk did not".
+The six settings commands (`get_settings` / `toggle_favorite` / `set_pin_favorites` / `set_lang` / `set_preset_order` / `set_preset_first`) **always return the full, current settings object**; the frontend never guesses. That removes a whole class of "the UI thinks it changed but the disk did not".
 
 App-defined commands need no capability entry — `src-tauri/capabilities/default.json` only carries `core:default`. Plugin commands do, which is why autostart is wrapped in two of our own commands instead.
 
@@ -114,6 +118,20 @@ Every backend error string that can reach the user is bilingual. Note that `form
 
 > During development, do not flip this switch: `npm run tauri dev` runs a debug build, so the login item would register `target/debug/` and keep launching the debug binary at boot.
 
+## External launch: quick switch
+
+A command-line entry for launchers and sticky notes such as MarkLock — start it with the flag and you get "switch, then be gone":
+
+```bash
+open -a DisplaySwitch --args -quick-switch   # short alias: -qs
+```
+
+- **Only two tokens count**: `QUICK_SWITCH_ARGS = ["-quick-switch", "-qs"]` (`src-tauri/src/lib.rs:33`). Before the builder exists, `run()` scans `std::env::args_os()` and sets the `QUICK_SWITCH` `AtomicBool` if any argument matches. The identifier is deliberately ASCII: a Chinese flag would have to survive AppleScript, clipboard and launcher encodings for no benefit.
+- **Consumed once**: the frontend calls `quick_switch_launched` on mount, and `QUICK_SWITCH.swap(false)` reads and clears it in one step. When it returns true the backend runs `show_quick_switch` — width by display count (380 for one, 600 for several), centered on the primary monitor (tray popups have a tray coordinate to anchor to, this path has none, so center is the easiest place to find it), then `show` + `set_focus`. Only that one cold start enters quick switch; every later wake-up is a normal panel.
+- **Launching with the flag while it already lives in the menu bar is just a wake-up**: `tauri-plugin-single-instance` hands the argv to the first instance and lets the second process `exit(0)`; the callback only calls `show_panel` when the flag is present, so no quick-switch mode and no countdown. On macOS the plugin detects the running instance through `/tmp/com_displayswitch_app_si.sock` (dots of the bundle id replaced with underscores), which is why the bare dev binary and the copy in `/Applications` recognize each other — whichever starts second quits immediately.
+- **The countdown only starts after an apply**: `pushDraft` / `applyPreset` call `startCountdown()` once the successful `load()` finishes; three seconds later `quit_app` runs. Clicking another setup does not restart the countdown (it returns early while `countdown > 0`), and a failed apply shows the error without starting it.
+- **The panel may not escape during the countdown**: reconfiguring displays makes the panel lose focus for a moment, and plain hide-on-blur would take the countdown and the cancel buttons away with it. So `set_panel_lock(true)` is called before applying, and released by `stopCountdown()` (countdown finished, "Hide to Menu Bar" pressed, or apply failed). The footer only renders for `quickSwitch && view === 'main'`: while counting it is two buttons — "Hide to Menu Bar" tucks the panel away and leaves the app running, "Quit in {n}s" carries the number on the button that actually quits — and otherwise it is a single line of hint text. The toast sits 58px up so it never covers the countdown.
+
 ## Icons
 
 - **The menu bar icon** is a monochrome template glyph (`src-tauri/icons/tray-template.png`, 36×36 = 18pt @2x) with `icon_as_template(true)`, handed to `NSImage.isTemplate` so it renders white on a dark menu bar and dark on a light one. Using the colour app icon directly got it downscaled to 18pt and turned into a smudge on a dark menu bar. The shape is "two displays stacked diagonally, with a stand bar on the front one" — without that stand bar it is indistinguishable from the system's duplicate-screen icon.
@@ -124,7 +142,7 @@ Every backend error string that can reach the user is bilingual. Note that `form
 
 ## Naming and bundle identifiers
 
-Chinese name 快切屏, English name DisplaySwitch, Chinese first in the UI. Technical identifiers stay put — bundle file name, `CFBundleName`, bundle id and the LaunchAgent plist remain `DisplaySwitch` / `com.displayswitch.app`; only `src-tauri/Info.plist` merges `CFBundleDisplayName = 快切屏` into the generated Info.plist (Tauri 2 reads and merges it automatically). macOS surfaces such as Login Items then show the Chinese name, while dmg names, scripts and paths never contain non-ASCII characters.
+Chinese name 快切屏, English name DisplaySwitch, Chinese first in the UI. Technical identifiers stay put — bundle file name, `CFBundleName`, bundle id and the LaunchAgent plist remain `DisplaySwitch` / `com.displayswitch.app`; only `src-tauri/Info.plist` merges `CFBundleDisplayName = 快切屏` and `LSUIElement` into the generated Info.plist (Tauri 2 reads and merges it automatically). macOS surfaces such as Login Items then show the Chinese name, while dmg names, scripts and paths never contain non-ASCII characters.
 
 ## Two frontend paths
 
@@ -142,6 +160,7 @@ cd src-tauri && cargo test # parser / settings / language / release-allowlist un
 ```
 
 - Browser preview: `npm run dev`, then http://localhost:5173 — the footer notes it is mock data with no real switching.
+- **Debugging the flag means going around `tauri dev`**: `npm run tauri dev -- -- -quick-switch` hands the argument to cargo, which fails on usage. Start vite first with `npm run dev`, then `cd src-tauri && cargo run -- -qs` — the debug build reads `devUrl`, so the frontend still hot-reloads. Note that a copy in `/Applications` competes for the same single-instance lock, so whichever of the two starts last quits itself.
 - displayplacer is bundled in `src-tauri/binaries/` (universal binary + MIT license). At runtime `displayplacer_path()` prefers `Contents/Resources/binaries/` and falls back to PATH, so a development machine can also `brew install displayplacer` and use the system copy.
 - **Do not run `cargo fmt`**: this repository is not rustfmt-clean, so one run reformats four or five unrelated files and mixes formatting noise into a feature commit. Hand-format new code to match its surroundings.
 - Frontend code is **Options API** throughout — no `<script setup>`, no Composition API.
@@ -159,3 +178,5 @@ cd src-tauri && cargo test # parser / settings / language / release-allowlist un
 - Tray click coordinates are physical pixels while window size is logical; one division by `scale_factor` is mandatory.
 - In the settings view at 380×520 the content is 498px tall against 469px of viewport: even with an empty setup list you scroll a little to see the whole Quit button, and any saved setup overflows it anyway. That is inherent to a fixed window height; we did not compress approved spacing just to make the empty state fit.
 - Mirrored displays show no star for favorites — their resolution follows the target, so starring something there could never take effect.
+- **A second double-click drags the app back to the foreground**: Tauri only exposes `set_activation_policy` on `App`, so calling it in `setup` is already late — at check-in LaunchServices registers the process as a normal foreground app (`lsappinfo` shows `type="Foreground"`). Double-clicking again does not spawn a process; it delivers a reopen event, and AppKit restores the policy from that registration, so the Dock icon stays. Adding `LSUIElement` to `src-tauri/Info.plist` makes the registration itself an agent (`type="UIElement"`), which removes both the startup flash and the stuck icon. To inspect: read `activationPolicy` from `NSWorkspace.shared.runningApplications` (0=Regular / 1=Accessory).
+- **The first click after the panel reappears can feel dead**: macOS by default spends the first click on an inactive window activating that window, and this panel hides on blur, so it often reappears unfocused. `acceptFirstMouse: true` in `tauri.conf.json` delivers that first click straight to the webview.

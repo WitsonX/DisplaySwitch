@@ -10,8 +10,8 @@
 
 - **窗口**：label `main`，600×520 逻辑点，`decorations:false` + `transparent:true` + `alwaysOnTop` + `skipTaskbar` + `visible:false`（`src-tauri/tauri.conf.json`）。只剩一台显示器时宽度收成 380（`SINGLE_PANEL_WIDTH`）——宽度在托盘点击那一刻按 `LAST_DISPLAY_COUNT` 决定，而这个值每次 `get_state` 都会刷新，所以插拔之后不必重开 App 就能拿到对的宽度。
 - **质感**：`window-vibrancy` 的 `apply_vibrancy(NSVisualEffectMaterial::HudWindow)`，配合圆角卡片就是 macOS 那套 HUD 毛玻璃。
-- **不进程序坞**：`setup` 里 `set_activation_policy(Accessory)`，于是没有 Dock 图标、不占 ⌘Tab，只有菜单栏那枚图标。
-- **失焦即隐藏**：`WindowEvent::Focused(false)` → `hide_panel_window()`。所以点面板外任意处、切到别的 App，面板自己就收了；顶栏 × 走 `hide_panel` 命令，效果相同。
+- **不进程序坞**：`src-tauri/Info.plist` 里的 `LSUIElement = true` 让 LaunchServices 在进程登记这一步就把它当后台 Agent，没有 Dock 图标、不占 ⌘Tab，只剩菜单栏那枚图标；`setup` 里那次 `set_activation_policy(Accessory)` 是给不读 Info.plist 的 `cargo run` 裸二进制兜底（开发时 Dock 会闪一下再消失，属正常）。
+- **失焦即隐藏**：`WindowEvent::Focused(false)` → `hide_panel_window()`。所以点面板外任意处、切到别的 App，面板自己就收了；顶栏 × 走 `hide_panel` 命令，效果相同。唯一的例外是快速切换：从点下场景那一刻起 `PANEL_LOCK` 上锁，见「外部调用：快速切换」。
 - **托盘**：`TrayIconBuilder::with_id("main-tray")` + `icon_as_template(true)`。左键弹出/收起，右键是原生菜单（显示面板 / 设置… / 退出）。原生菜单不会跟网页一起重渲染，所以语言变了要就地 `tray_by_id("main-tray").set_menu(Some(tray_menu(app)))` 重建一份。
 - **定位**：托盘点击回传的坐标是物理像素，按 `window.scale_factor()` 换算后再定位；窗口尺寸本身用逻辑点表达，避免 Retina 2x 下两套单位混用。
 - **热插拔**：`setup` 里注册 `CGDisplayRegisterReconfigurationCallback`。合盖/开盖/插拔会连续触发多次回调，所以用一个自增序号做 800ms 防抖，静默期过后只 `emit("displays-changed")` 一次；前端 `listen` 到就重新 `load()`，面板重新拿到焦点时也会刷一次。
@@ -27,7 +27,7 @@
 | `save_preset` | `name`, `config` | — | 存一整套配置 |
 | `list_presets` | — | `PresetEntry[]` | 列出全部预设（含未接入显示器的） |
 | `delete_preset` | `name` | — | 删除 |
-| `get_settings` | — | `AppSettings` | 收藏、置顶开关、语言偏好 |
+| `get_settings` | — | `AppSettings` | 收藏、置顶开关、语言偏好、方案顺序、预设优先开关 |
 | `toggle_favorite` | `displayId`, `res` | `AppSettings` | 给某屏收藏/取消一档 |
 | `set_pin_favorites` | `pin` | `AppSettings` | 收藏是否置顶 |
 | `set_lang` | `lang` | `AppSettings` | 存语言偏好，并重建托盘菜单 |
@@ -36,8 +36,12 @@
 | `get_autostart` | — | `bool` | 回读系统里 LaunchAgent 的真实注册结果 |
 | `set_autostart` | `enabled` | `bool` | 开/关登录自启动，返回最终状态 |
 | `open_url` | `url` | — | 只允许打开发布页，见「检查更新」 |
+| `set_preset_order` | `order` | `AppSettings` | 拖动排序后整份覆盖方案顺序，空数组表示「没拖过，按读盘顺序」 |
+| `set_preset_first` | `on` | `AppSettings` | 预设场景优先开关 |
+| `quick_switch_launched` | — | `bool` | 前端挂载后取走启动参数标记（读一次即清零）；为真时后端顺带按屏数定宽、居中弹出面板 |
+| `set_panel_lock` | `locked` | — | 锁住/放开「失焦即隐藏」，快速切换倒计时期间用 |
 
-四个设置类命令（`get_settings` / `toggle_favorite` / `set_pin_favorites` / `set_lang`）**每次都回传最新全量设置**，前端不做本地推断——少一处「前端以为改了、后端没落盘」的错位。
+六个设置类命令（`get_settings` / `toggle_favorite` / `set_pin_favorites` / `set_lang` / `set_preset_order` / `set_preset_first`）**每次都回传最新全量设置**，前端不做本地推断——少一处「前端以为改了、后端没落盘」的错位。
 
 App 自定义命令不需要 capability 条目，`src-tauri/capabilities/default.json` 里只有 `core:default`；插件命令（自启动）才需要，这里也通过 Rust 包一层避开了。
 
@@ -114,6 +118,20 @@ Rust 侧只有 `src-tauri/src/lang.rs`：一个 `AtomicBool` 生效语言缓存 
 
 > 开发时别顺手点开这个开关：`npm run tauri dev` 跑的是 debug 构建，注册进去的自启动路径就是 `target/debug/` 里那个，之后开机自启动的会是调试版。
 
+## 外部调用：快速切换
+
+给 MarkLock 便签这类启动器留的入口，带参启动即进「切完就走」的模式：
+
+```bash
+open -a DisplaySwitch --args -quick-switch   # 等价短参 -qs
+```
+
+- **参数只认两个 token**：`QUICK_SWITCH_ARGS = ["-quick-switch", "-qs"]`（`src-tauri/src/lib.rs:33`），`run()` 在建 Builder 之前扫 `std::env::args_os()`，命中就把 `QUICK_SWITCH` 这枚 `AtomicBool` 置位。技术标识用英文：中文参数要穿过 AppleScript/剪贴板/便签几层编码，不值得为省两个字母冒险。
+- **取一次即失效**：前端 `mounted` 调 `quick_switch_launched`，`QUICK_SWITCH.swap(false)` 读出并清零；为真时后端顺手 `show_quick_switch`——按当前屏数定宽（单屏 380，多屏 600）、在主屏居中弹出（托盘弹出有托盘坐标当锚点，这里没有，居中最好找），再 `show` + `set_focus`。所以只有那一次冷启动会进快速切换，之后任何唤出都是普通面板。
+- **已在托盘驻留时带参启动只是唤出**：`tauri-plugin-single-instance` 让第二个进程把 argv 转交首个实例后自行 `exit(0)`；回调里命中快速切换参数才 `show_panel`，不进快速切换、不倒计时。macOS 上它靠 `/tmp/com_displayswitch_app_si.sock`（bundle id 的点换成下划线）认已有实例，因此 dev 裸二进制和 `/Applications` 里那份会互相认出来——同时开着两边时，后起的那个直接退。
+- **应用后才起倒数**：`pushDraft` / `applyPreset` 成功 `load()` 之后调 `startCountdown()`，3 秒到点走 `quit_app`；重复点场景不会重置倒数（`countdown > 0` 直接 return），切换失败则不起倒数、只报错。
+- **倒数期间不许面板跑掉**：displayplacer 重排显示器会让面板瞬间失焦，原本的「失焦即隐藏」会把倒计时连同取消入口一起收走。所以点下场景之前先 `set_panel_lock(true)`，`stopCountdown()`（倒数走完、点「隐藏到菜单栏」、切换失败）时解锁。底部那行只在 `quickSwitch && view === 'main'` 出现：有倒数时是两枚按钮——「隐藏到菜单栏」收面板留在托盘，「N 秒后退出」把倒数挂在真正会执行退出的那枚上；没倒数时只是一行说明文字。Toast 靠 `raised` 上移到 58px，不压住倒数。
+
 ## 图标
 
 - **菜单栏图标**是一枚单色模板 glyph（`src-tauri/icons/tray-template.png`，36×36 = 18pt @2x），配 `icon_as_template(true)` 交给 `NSImage.isTemplate`，深色菜单栏自动描白、浅色描黑。此前直接用彩色 App 图标会被 `tray-icon` 压成 18pt，深色菜单栏下整块糊掉。形状是「两块屏斜向叠放 + 前屏一根底座横线」——没有那根横线时它等于系统的「复制」图标，会被认成快捷键指示器。
@@ -124,7 +142,7 @@ Rust 侧只有 `src-tauri/src/lang.rs`：一个 `AtomicBool` 生效语言缓存 
 
 ## 命名与 bundle 标识
 
-中文名「快切屏」，英文名 DisplaySwitch，界面上中文在前。技术标识一律不动——bundle 文件名、`CFBundleName`、bundle id、LaunchAgent plist 仍是 `DisplaySwitch` / `com.displayswitch.app`，只通过 `src-tauri/Info.plist` 往生成的 Info.plist 里合并 `CFBundleDisplayName = 快切屏`（Tauri 2 会自动读取并 merge）。这样系统设置「登录项」等 macOS 界面显示中文名，而 dmg、脚本、路径不受非 ASCII 影响。
+中文名「快切屏」，英文名 DisplaySwitch，界面上中文在前。技术标识一律不动——bundle 文件名、`CFBundleName`、bundle id、LaunchAgent plist 仍是 `DisplaySwitch` / `com.displayswitch.app`，只通过 `src-tauri/Info.plist` 往生成的 Info.plist 里合并 `CFBundleDisplayName = 快切屏` 和 `LSUIElement`（Tauri 2 会自动读取并 merge）。这样系统设置「登录项」等 macOS 界面显示中文名，而 dmg、脚本、路径不受非 ASCII 影响。
 
 ## 前端双路径
 
@@ -142,6 +160,7 @@ cd src-tauri && cargo test # 解析器 / 设置 / 语言 / 发布页白名单单
 ```
 
 - 浏览器预览：`npm run dev` 打开 http://localhost:5173，底部有「假数据」提示，不接入真实切换。
+- **带参调试要绕开 `tauri dev`**：`npm run tauri dev -- -- -quick-switch` 会把参数交给 cargo（cargo 报用法错误）。可行做法是先 `npm run dev` 起 vite，再 `cd src-tauri && cargo run -- -qs`——debug 构建读的是 `devUrl`，界面照样热重载。注意 `/Applications` 里那份会和你抢单实例锁，两边同时开时后起的那个自己就退了。
 - displayplacer 已内嵌在 `src-tauri/binaries/`（universal 二进制 + MIT LICENSE），运行时 `displayplacer_path()` 优先解析包内 `Contents/Resources/binaries/`、未命中回落 PATH，所以开发环境也可以 `brew install displayplacer` 用系统那份。
 - **不要跑 `cargo fmt`**：这个仓库不是 rustfmt-clean，跑一次会顺手重排四五个无关文件，把格式化噪声混进功能提交。新代码按周围风格手写即可。
 - 前端一律 **Options API**，不使用 `<script setup>` / Composition API。
@@ -159,3 +178,5 @@ cd src-tauri && cargo test # 解析器 / 设置 / 语言 / 发布页白名单单
 - 托盘点击坐标是物理像素，窗口尺寸是逻辑点，中间必须除一次 `scale_factor`。
 - 设置视图在 380×520 下内容高 498、可视 469：方案列表为空时也要滚一点才看全「退出」按钮，任何一条已存方案都会溢出。这是固定窗口高度的必然结果，没有为了空状态去压缩已经定稿的间距。
 - 镜像屏不显示收藏星——它的分辨率由目标屏决定，收藏了也不会生效。
+- **第二次双击会把 App 拽回前台**：Tauri 只在 `App` 上暴露 `set_activation_policy`，`setup` 里调已经晚了——进程 check-in 时 LaunchServices 按普通前台 App 登记（`lsappinfo` 里 `type="Foreground"`）。再双击一次不产生新进程，走的是 reopen 事件，AppKit 按那份登记把策略打回 Regular，Dock 图标就此留住。写进 `src-tauri/Info.plist` 的 `LSUIElement` 让登记本身是 agent（`type="UIElement"`），首次启动的闪烁和第二次留住一起消失。查策略用 `NSWorkspace.shared.runningApplications` 读 `activationPolicy`（0=Regular / 1=Accessory）。
+- **面板重新弹出后第一下点不到**：macOS 默认把「点击未激活窗口」的第一下用来激活窗口，而这套面板是失焦即隐藏、每次弹出都可能没焦点。`tauri.conf.json` 里 `acceptFirstMouse: true` 让第一下直接落到网页。

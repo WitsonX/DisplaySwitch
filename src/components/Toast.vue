@@ -1,12 +1,14 @@
 <template>
-  <div class="toast">{{ message }}</div>
+  <div class="toast" :class="{ raised }">{{ message }}</div>
 </template>
 
 <script>
 export default {
   name: 'Toast',
   props: {
-    message: { type: String, required: true }
+    message: { type: String, required: true },
+    // 快速切换底条显示时抬到条上方，免得盖住倒计时和取消按钮
+    raised: { type: Boolean, default: false }
   }
 }
 </script>
@@ -24,5 +26,9 @@ export default {
   border-radius: 999px;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.toast.raised {
+  bottom: 58px;
 }
 </style>
