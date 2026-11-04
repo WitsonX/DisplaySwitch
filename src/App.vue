@@ -26,6 +26,7 @@
           <span>{{ $t('appName') }}</span>
           <span v-if="!isEnglish" class="title-en">DisplaySwitch</span>
         </div>
+        <span class="head-spacer" />
         <span v-if="statusText" class="status-pill">{{ statusText }}</span>
         <button class="gear-btn" :title="$t('settings')" @click="view = 'settings'">
           <svg
@@ -56,6 +57,7 @@
       :preset-first="presetFirst"
       :autostart="autostart"
       :lang-pref="langPref"
+      :hotkey="hotkey"
       @delete="removePreset"
       @rename="renamePreset"
       @reorder="reorderPresets"
@@ -63,6 +65,7 @@
       @set-preset-first="changePresetFirst"
       @set-autostart="changeAutostart"
       @set-lang="changeLang"
+      @set-hotkey="changeHotkey"
       @open-url="openUrl"
       @quit="quitApp"
     />
@@ -109,7 +112,9 @@
       </template>
 
       <div class="preset-area">
-        <div class="section-label">{{ $t('titlePresets') }}</div>
+        <div class="section-label preset-label" :class="{ quiet: cmdHeld }">
+          {{ $t('titlePresets') }}
+        </div>
         <div v-if="saving" class="save-box">
           <input
             ref="saveInput"
@@ -125,16 +130,17 @@
         </div>
         <div v-else class="preset-bar">
           <button
-            v-for="p in presets"
+            v-for="(p, i) in presets"
             :key="p.name"
             class="preset-pill"
             @click="applyPreset(p)"
-            @mouseenter="showTip(p.desc, $event)"
+            @mouseenter="showTip(p.desc, $event, i)"
             @mouseleave="hideTip"
-            @focus="showTip(p.desc, $event)"
+            @focus="showTip(p.desc, $event, i)"
             @blur="hideTip"
-            >{{ p.name }}</button
           >
+            {{ p.name }}<span v-if="i < 9 && cmdHeld" class="pill-kbd">⌘{{ i + 1 }}</span>
+          </button>
           <button
             class="preset-pill preset-save"
             @click="toggleSave"
@@ -144,8 +150,13 @@
             @blur="hideTip"
             >{{ $t('savePresetBtn') }}</button
           >
-          <div v-if="tip" ref="tip" class="preset-tip" :style="{ left: tip.left + 'px' }">
-            {{ tip.desc }}
+          <div
+            v-if="tip && !cmdHeld"
+            ref="tip"
+            class="preset-tip"
+            :style="{ left: tip.left + 'px' }"
+          >
+            {{ tip.desc }}<span v-if="tip.kbd" class="tip-kbd"> · {{ tip.kbd }}</span>
           </div>
         </div>
         <div v-if="isMock" class="mock-note">{{ $t('mockNote') }}</div>
@@ -161,6 +172,10 @@
       </template>
       <span v-else class="quick-hint">{{ $t('quickSwitchHint') }}</span>
     </div>
+
+    <transition name="kbd-fade">
+      <div v-if="cmdHeld" class="kbd-tip">{{ $t('quitHint') }}</div>
+    </transition>
 
     <Toast v-if="toast" :message="toast" :raised="quickFooter" />
   </div>
@@ -191,14 +206,20 @@ export default {
       pinFavorites: true,
       presetFirst: false,
       quickSwitch: false,
+      // 一次切换没落地之前，后面的点击和按键直接丢（pushDraft / applyPreset 共用）
+      switching: false,
       countdown: 0,
       countdownTimer: null,
       autostart: false,
+      // 显示/隐藏主面板的全局快捷键，形如 "Command+Shift+D"；空串表示未设置（默认）
+      hotkey: '',
       saving: false,
       newPresetName: '',
       toast: null,
       toastTimer: null,
       tip: null,
+      // 按住了 ⌘：浮出「⌘Q 退出」提示
+      cmdHeld: false,
       error: null
     }
   },
@@ -279,10 +300,8 @@ export default {
       return this.enriched.find((d) => d.id === this.selectedId) || this.enriched[0] || null
     },
     statusText() {
-      if (!this.displays.length) return ''
-      if (this.displays.length === 1) {
-        return t('statusSingle', { res: pretty(this.displays[0].current) })
-      }
+      // 单屏时信息价值低，直接不显示状态胶囊
+      if (this.displays.length <= 1) return ''
       const main = this.displays.find((d) => d.main) || this.displays[0]
       const mirrors = this.displays.filter((d) => d.mirrorOf).length
       const base = t('statusMulti', { count: this.displays.length, name: shortName(main.name) })
@@ -297,6 +316,10 @@ export default {
   },
   mounted() {
     this.load()
+    window.addEventListener('keydown', this.onKeydown)
+    window.addEventListener('keyup', this.onKeyup)
+    // 掉焦点时 keyup 不会补发（比如按着 ⌘ 切了 App），靠 blur 收尾
+    window.addEventListener('blur', this.clearCmdHint)
     if (api.isTauri) {
       // 冷启动带 -quick-switch / -qs：后端已弹窗，这里消费标志进入快速切换形态
       api.quickSwitchLaunched().then((qs) => {
@@ -349,6 +372,7 @@ export default {
       this.pinFavorites = s.pinFavorites !== false
       this.presetOrder = s.presetOrder || []
       this.presetFirst = s.presetFirst === true
+      this.hotkey = s.hotkey || ''
       setLangPref(s.lang || 'auto')
     },
     async reorderPresets(names) {
@@ -416,6 +440,16 @@ export default {
         this.refreshAutostart()
       }
     },
+    // 快捷键：后端注册成功才更新本地值，失败（格式非法/被占用）弹提示并保持原值
+    async changeHotkey(shortcut) {
+      try {
+        await api.setHotkey(shortcut)
+        this.hotkey = shortcut || ''
+        if (this.isMock) this.showToast(t('hotkeyDemo'))
+      } catch (e) {
+        this.showToast(t('hotkeyError', { e }))
+      }
+    },
     async openUrl(url) {
       try {
         await api.openUrl(url)
@@ -479,6 +513,17 @@ export default {
       }, 2000)
     },
     async pushDraft(draft, okMsg) {
+      // 显示器正在重排时再来一遍，两次 apply_config 会叠在一起、闪得更久，
+      // 末尾的 load() 也会互相打乱，所以这里上锁到整个流程跑完
+      if (this.switching) return
+      this.switching = true
+      try {
+        await this.runDraft(draft, okMsg)
+      } finally {
+        this.switching = false
+      }
+    },
+    async runDraft(draft, okMsg) {
       // 切换会重排显示器、面板瞬间失焦，锁住到倒计时结束
       if (this.quickSwitch) api.setPanelLock(true)
       let applied = false
@@ -553,11 +598,18 @@ export default {
       me.scaling = m.scaling !== undefined ? m.scaling : me.scaling
       this.pushDraft(draft, t('resSet', { name: display.name, label: m.label }))
     },
-    showTip(desc, e) {
+    showTip(desc, e, i) {
       const el = e.currentTarget
       const pill = el.getBoundingClientRect()
       const bar = el.closest('.preset-bar').getBoundingClientRect()
-      this.tip = { desc, left: pill.left - bar.left + pill.width / 2, barWidth: bar.width }
+      // 「+ 保存」不传下标，所以不带序号；第 10 个起也不带，跟 ⌘1–⌘9 只管前九条一致
+      const kbd = i === undefined || i > 8 ? '' : `⌘${i + 1}`
+      this.tip = {
+        desc,
+        kbd,
+        left: pill.left - bar.left + pill.width / 2,
+        barWidth: bar.width
+      }
       // 气泡宽度要渲染了才知道，所以先居中再用真实半宽夹回条内
       this.$nextTick(this.clampTip)
     },
@@ -571,7 +623,46 @@ export default {
     hideTip() {
       this.tip = null
     },
+    // 平时面板失焦就收起，所以能收到按键时焦点必定在 DS 这边，
+    // ⌘Q 不会被菜单栏上那个「退出 XX」截走；快速切换上锁期间若焦点跑掉了，
+    // 按键归当时那个前台 App，这也符合系统习惯
+    onKeydown(e) {
+      // 按住不放的自动重复必须挡掉：⌘1 按住能连发几十次 keydown，就是几十遍
+      // apply_config，显示器被反复重排，闪得比鼠标点一下严重得多
+      if (e.repeat) return
+      // 单按 ⌘ 时浮出提示，不常驻、不占版面
+      if (e.key === 'Meta') {
+        this.cmdHeld = true
+        return
+      }
+      if (!e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key.toLowerCase() === 'q') {
+        e.preventDefault()
+        e.stopPropagation()
+        this.quitApp()
+        return
+      }
+      // ⌘1–⌘9 按胶囊上显示的序号取场景（同一份 presets 顺序）；设置视图和改名输入时不接
+      if (this.view !== 'main' || this.saving) return
+      if (!/^[1-9]$/.test(e.key)) return
+      const p = this.presets[Number(e.key) - 1]
+      if (!p) return
+      e.preventDefault()
+      e.stopPropagation()
+      this.applyPreset(p)
+    },
+    onKeyup(e) {
+      if (e.key !== 'Meta') return
+      this.cmdHeld = false
+      // 按住期间气泡是被隐着的，没走过夹位；松开这一刻补一次，免得出条边界
+      if (this.tip) this.$nextTick(this.clampTip)
+    },
+    clearCmdHint() {
+      this.cmdHeld = false
+    },
     async applyPreset(p) {
+      if (this.switching) return
+      this.switching = true
       if (this.quickSwitch) api.setPanelLock(true)
       try {
         await api.applyConfig(p.config)
@@ -581,6 +672,8 @@ export default {
       } catch (e) {
         this.showToast(t('presetApplyError', { e }))
         if (this.quickSwitch) api.setPanelLock(false)
+      } finally {
+        this.switching = false
       }
     },
     async removePreset(p) {
@@ -741,7 +834,6 @@ function pretty(res) {
 }
 
 .status-pill {
-  margin-left: auto;
   font-size: 11px;
   color: var(--text-2);
   background: rgba(0, 0, 0, 0.05);
@@ -867,6 +959,13 @@ function pretty(res) {
   flex-shrink: 0;
 }
 
+/* 序号框浮在胶囊正上方，那条带正好压着「场景预设」四个字。按住 ⌘ 期间把它
+   visibility 掉（不是 v-if，位置留着），松开就回来——否则第一个胶囊的序号
+   框会把标题盖成「场景口口」 */
+.preset-label.quiet {
+  visibility: hidden;
+}
+
 .preset-bar {
   display: flex;
   gap: 6px;
@@ -894,13 +993,40 @@ function pretty(res) {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
 }
 
+/* 气泡末尾的快捷键：接在同一行后面，只把亮度压低，不再加行抬高气泡；
+   nowrap 保证描述折行时不会把「· ⌘1」孤零零甩到第二行 */
+.tip-kbd {
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+}
+
 .preset-pill {
+  position: relative;
   font-size: 12px;
   padding: 6px 13px;
   border-radius: 999px;
   border: 0.5px solid var(--divider);
   background: var(--card);
   color: var(--text-1);
+}
+
+/* 序号框贴在胶囊正上方：绝对定位所以不参与排版，按下 ⌘ 那一下整行不会重排。
+   与气泡同一条上方带，所以按住期间把气泡隐掉，不叠在一起 */
+.pill-kbd {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 30, 32, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 8px;
+  border-radius: 7px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 41;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.16);
 }
 
 .preset-pill:hover {
@@ -1008,6 +1134,33 @@ function pretty(res) {
   font-size: 10px;
   color: var(--text-2);
   padding-top: 6px;
+}
+
+.kbd-tip {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  background: rgba(30, 30, 32, 0.9);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 11px 22px;
+  border-radius: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 45;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.kbd-fade-enter-active,
+.kbd-fade-leave-active {
+  transition: opacity 0.12s ease;
+}
+
+.kbd-fade-enter-from,
+.kbd-fade-leave-to {
+  opacity: 0;
 }
 
 .quick-footer {

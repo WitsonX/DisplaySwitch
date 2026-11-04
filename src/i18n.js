@@ -88,6 +88,15 @@ const zh = {
   langZh: '简体中文',
   langEn: 'English',
 
+  hotkeyName: '全局快捷键',
+  hotkeyDesc: '按下即可显示 / 隐藏主界面，任何时候都生效',
+  hotkeyNone: '未设置',
+  hotkeyRecording: '按下快捷键…',
+  hotkeyNeedMod: '需包含 ⌘ / ⌃ / ⌥',
+  hotkeyClear: '清除',
+  hotkeyError: '快捷键设置失败：{e}',
+  hotkeyDemo: '快捷键已更新（演示）',
+
   presetsEmpty: '还没有方案 · 回到面板保存当前配置',
   presetsUnavailable: '显示器未接入',
   rename: '改名',
@@ -109,6 +118,7 @@ const zh = {
   updateCheck: '检查更新',
   updateOpen: '打开发布页',
   quitApp: '退出快切屏',
+  quitHint: '按 ⌘Q 键即可退出',
 
   savePresetBtn: '+ 保存',
   savePresetTip: '存下当前角色与分辨率，之后一键恢复',
@@ -204,6 +214,15 @@ const en = {
   langZh: '简体中文',
   langEn: 'English',
 
+  hotkeyName: 'Global Shortcut',
+  hotkeyDesc: 'Press to show / hide the main panel, works anytime',
+  hotkeyNone: 'Not set',
+  hotkeyRecording: 'Press keys…',
+  hotkeyNeedMod: 'Needs ⌘ / ⌃ / ⌥',
+  hotkeyClear: 'Clear',
+  hotkeyError: 'Could not set the shortcut: {e}',
+  hotkeyDemo: 'Shortcut updated (demo)',
+
   presetsEmpty: 'No setups yet · save the current one from the main panel',
   presetsUnavailable: 'Displays not connected',
   rename: 'Rename',
@@ -225,6 +244,7 @@ const en = {
   updateCheck: 'Check for updates',
   updateOpen: 'View release',
   quitApp: 'Quit DisplaySwitch',
+  quitHint: 'Press ⌘Q to quit',
 
   savePresetBtn: '+ Save',
   savePresetTip: 'Store the current roles and resolutions',

@@ -17,6 +17,8 @@ pub struct AppSettings {
     pub preset_order: Vec<String>,
     /// 预设场景优先：把方案排到主面板最前面并放大按钮，默认关（沿用原布局）
     pub preset_first: bool,
+    /// 显示/隐藏主面板的全局快捷键，形如 "Command+Shift+D"；None（默认）表示未设置
+    pub hotkey: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -29,6 +31,8 @@ struct Stored {
     preset_order: Option<Vec<String>>,
     // 缺省视为 false：「预设场景优先」是后加的开关，老设置应保持原布局
     preset_first: Option<bool>,
+    // 全局快捷键：默认空，用户没设过就是 None（不注册任何快捷键）
+    hotkey: Option<String>,
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -82,6 +86,7 @@ fn public(stored: Stored) -> AppSettings {
         lang: stored.lang,
         preset_order: stored.preset_order.unwrap_or_default(),
         preset_first: stored.preset_first.unwrap_or(false),
+        hotkey: stored.hotkey.filter(|s| !s.is_empty()),
     }
 }
 
@@ -138,6 +143,19 @@ pub fn set_preset_first(app: &AppHandle, on: bool) -> Result<AppSettings, String
     Ok(public(stored))
 }
 
+/// 仅取已保存的快捷键（空串按未设置处理），供启动时恢复注册与后端回滚用
+pub fn load_hotkey(app: &AppHandle) -> Option<String> {
+    load(app).hotkey.filter(|s| !s.is_empty())
+}
+
+/// 存下快捷键字符串（None / 空串表示清空，前端已注册成功后再调用）
+pub fn set_hotkey(app: &AppHandle, hotkey: Option<String>) -> Result<AppSettings, String> {
+    let mut stored = load(app);
+    stored.hotkey = hotkey.filter(|s| !s.is_empty());
+    store(app, &stored)?;
+    Ok(public(stored))
+}
+
 /// 生效语言：显式选过 zh/en 就用选的，auto（或没选过）跟随系统；托盘菜单在启动时按它构建
 pub fn effective_lang(app: &AppHandle) -> String {
     lang::resolve(load(app).lang.as_deref())
@@ -190,5 +208,20 @@ mod tests {
         let stored: Stored =
             serde_json::from_str(r#"{"favorites":{},"presetFirst":true}"#).unwrap();
         assert!(public(stored).preset_first);
+    }
+
+    #[test]
+    fn missing_hotkey_field_reads_as_none() {
+        let stored: Stored = serde_json::from_str(r#"{"favorites":{}}"#).unwrap();
+        assert_eq!(public(stored).hotkey, None);
+    }
+
+    #[test]
+    fn chosen_hotkey_is_kept_and_blank_cleared() {
+        let stored: Stored =
+            serde_json::from_str(r#"{"favorites":{},"hotkey":"Command+Shift+D"}"#).unwrap();
+        assert_eq!(public(stored).hotkey.as_deref(), Some("Command+Shift+D"));
+        let blank: Stored = serde_json::from_str(r#"{"favorites":{},"hotkey":""}"#).unwrap();
+        assert_eq!(public(blank).hotkey, None);
     }
 }

@@ -43,18 +43,6 @@
       </label>
       <label class="s-row s-toggle-row">
         <span class="s-label">
-          <span class="s-name">{{ $t('presetFirstName') }}</span>
-          <span class="s-desc">{{ $t('presetFirstDesc') }}</span>
-        </span>
-        <input
-          type="checkbox"
-          class="s-switch"
-          :checked="presetFirst"
-          @change="$emit('set-preset-first', $event.target.checked)"
-        />
-      </label>
-      <label class="s-row s-toggle-row">
-        <span class="s-label">
           <span class="s-name">{{ $t('pinName') }}</span>
           <span class="s-desc">{{ $t('pinDesc') }}</span>
         </span>
@@ -65,6 +53,47 @@
           @change="$emit('set-pin', $event.target.checked)"
         />
       </label>
+      <label class="s-row s-toggle-row">
+        <span class="s-label">
+          <span class="s-name">{{ $t('presetFirstName') }}</span>
+          <span class="s-desc">{{ $t('presetFirstDesc') }}</span>
+        </span>
+        <input
+          type="checkbox"
+          class="s-switch"
+          :checked="presetFirst"
+          @change="$emit('set-preset-first', $event.target.checked)"
+        />
+      </label>
+      <div class="s-row">
+        <span class="s-label">
+          <span class="s-name">{{ $t('hotkeyName') }}</span>
+          <span class="s-desc">{{ recording && invalidHint ? $t('hotkeyNeedMod') : $t('hotkeyDesc') }}</span>
+        </span>
+        <div class="s-hotkey">
+          <button
+            class="s-hotkey-field"
+            :class="{ recording }"
+            @click="toggleRecord"
+          >
+            {{
+              recording
+                ? $t('hotkeyRecording')
+                : hotkey
+                  ? formatHotkey(hotkey)
+                  : $t('hotkeyNone')
+            }}
+          </button>
+          <button
+            v-if="hotkey && !recording"
+            class="s-hotkey-clear"
+            :title="$t('hotkeyClear')"
+            @click="clearHotkey"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
     </div>
 
     <div class="section-label">{{ $t('groupSaved') }}</div>
@@ -155,9 +184,11 @@ export default {
     pinFavorites: { type: Boolean, default: true },
     presetFirst: { type: Boolean, default: false },
     autostart: { type: Boolean, default: false },
-    langPref: { type: String, default: 'auto' }
+    langPref: { type: String, default: 'auto' },
+    // 显示/隐藏主面板的全局快捷键（后端已注册的规范串），空串表示未设置
+    hotkey: { type: String, default: '' }
   },
-  emits: ['delete', 'rename', 'reorder', 'set-pin', 'set-preset-first', 'set-autostart', 'set-lang', 'quit', 'open-url'],
+  emits: ['delete', 'rename', 'reorder', 'set-pin', 'set-preset-first', 'set-autostart', 'set-lang', 'set-hotkey', 'quit', 'open-url'],
   data() {
     return {
       version,
@@ -166,6 +197,9 @@ export default {
       appIcon,
       renaming: null,
       renameValue: '',
+      // 快捷键录入态：recording 是否在监听按键，invalidHint 是否刚按了缺主修饰键的组合
+      recording: false,
+      invalidHint: false,
       // 拖拽排序中的状态：{ from, over, y0, armed }，null 表示没在拖
       drag: null,
       // idle / checking / upToDate / available / none / failed
@@ -203,6 +237,10 @@ export default {
       return this.buildStamp ? `Canary ${this.buildStamp.replace('canary-', '')}` : ''
     }
   },
+  beforeUnmount() {
+    // 面板收起会直接卸载组件，确保录入监听不留残留
+    if (this.recording) window.removeEventListener('keydown', this.onRecordKey, true)
+  },
   methods: {
     startRename(p) {
       this.renaming = p.name
@@ -217,6 +255,110 @@ export default {
       const name = this.renameValue.trim()
       if (name && name !== p.name) this.$emit('rename', p, name)
       this.renaming = null
+    },
+    // —— 全局快捷键录入 ——
+    toggleRecord() {
+      if (this.recording) this.stopRecord()
+      else this.startRecord()
+    },
+    startRecord() {
+      this.recording = true
+      this.invalidHint = false
+      // 用捕获阶段监听，配合 stopPropagation 抢在 App 的全局按键处理前，
+      // 免得录入时误触 ⌘Q 退出或 ⌘1–⌘9 应用场景
+      window.addEventListener('keydown', this.onRecordKey, true)
+    },
+    stopRecord() {
+      this.recording = false
+      this.invalidHint = false
+      window.removeEventListener('keydown', this.onRecordKey, true)
+    },
+    onRecordKey(e) {
+      e.preventDefault()
+      e.stopPropagation()
+      // 不带修饰键单按 Esc：取消录入，不当作快捷键
+      const hasMod = e.metaKey || e.ctrlKey || e.altKey || e.shiftKey
+      if (e.key === 'Escape' && !hasMod) {
+        this.stopRecord()
+        return
+      }
+      // 只按修饰键还没带主键，继续等下一个键
+      if (['Meta', 'Control', 'Alt', 'Shift'].includes(e.key)) return
+      // macOS 全局快捷键必须带 ⌘/⌃/⌥ 至少一个主修饰键，光按 ⇧ 或裸键会跟系统/其他 App 冲突
+      if (!(e.metaKey || e.ctrlKey || e.altKey)) {
+        this.invalidHint = true
+        return
+      }
+      const key = this.keyToken(e)
+      if (!key) return // 不支持的键，忽略并继续录入
+      this.invalidHint = false
+      const mods = []
+      if (e.metaKey) mods.push('Command')
+      if (e.ctrlKey) mods.push('Control')
+      if (e.altKey) mods.push('Alt')
+      if (e.shiftKey) mods.push('Shift')
+      this.$emit('set-hotkey', [...mods, key].join('+'))
+      this.stopRecord()
+    },
+    clearHotkey() {
+      this.$emit('set-hotkey', '')
+    },
+    // 把 KeyboardEvent 映射成 global-shortcut 认的按键 token（keyboard-types Code 名）
+    keyToken(e) {
+      if (/^[a-zA-Z]$/.test(e.key)) return e.key.toUpperCase()
+      if (/^[0-9]$/.test(e.key)) return e.key
+      if (/^F(?:[1-9]|1[0-2])$/.test(e.key)) return e.key.toUpperCase()
+      const map = {
+        ' ': 'Space',
+        Enter: 'Enter',
+        Tab: 'Tab',
+        Escape: 'Escape',
+        Backspace: 'Backspace',
+        Delete: 'Delete',
+        ArrowUp: 'ArrowUp',
+        ArrowDown: 'ArrowDown',
+        ArrowLeft: 'ArrowLeft',
+        ArrowRight: 'ArrowRight',
+        Home: 'Home',
+        End: 'End',
+        PageUp: 'PageUp',
+        PageDown: 'PageDown',
+        ',': 'Comma',
+        '.': 'Period',
+        '/': 'Slash',
+        ';': 'Semicolon',
+        "'": 'Quote',
+        '-': 'Minus',
+        '=': 'Equal',
+        '[': 'BracketLeft',
+        ']': 'BracketRight',
+        '\\': 'Backslash',
+        '`': 'Backquote'
+      }
+      return map[e.key] || null
+    },
+    // 规范串转成 macOS 符号显示，如 Command+Shift+D → ⌘⇧D
+    formatHotkey(str) {
+      const sym = { Command: '⌘', Control: '⌃', Alt: '⌥', Shift: '⇧' }
+      const keyDisp = {
+        Space: 'Space',
+        Enter: '↵',
+        Escape: '⎋',
+        Tab: '⇥',
+        Backspace: '⌫',
+        Delete: '⌦',
+        ArrowUp: '↑',
+        ArrowDown: '↓',
+        ArrowLeft: '←',
+        ArrowRight: '→'
+      }
+      const mods = []
+      const keys = []
+      for (const p of str.split('+')) {
+        if (sym[p]) mods.push(sym[p])
+        else keys.push(keyDisp[p] || p)
+      }
+      return mods.join('') + keys.join('')
     },
     rowDown(i, e) {
       if (e.button !== 0 || this.renaming !== null) return
@@ -509,6 +651,56 @@ export default {
   border-radius: 6px;
   background: var(--bg);
   color: var(--text-1);
+}
+
+/* 全局快捷键录入：右侧一个像输入框的按钮，点击进入录入态 */
+.s-hotkey {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.s-hotkey-field {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 74px;
+  text-align: center;
+  padding: 5px 10px;
+  border: 0.5px solid var(--divider);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--text-1);
+  box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.06);
+  white-space: nowrap;
+}
+
+.s-hotkey-field:hover {
+  border-color: rgba(10, 132, 255, 0.35);
+}
+
+.s-hotkey-field.recording {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.s-hotkey-clear {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--text-2);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.s-hotkey-clear:hover {
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
 }
 
 .about {

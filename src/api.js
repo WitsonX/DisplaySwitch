@@ -175,6 +175,7 @@ const mockSettings = {
   lang: 'auto',
   presetOrder: [],
   presetFirst: false,
+  hotkey: '',
 }
 
 export async function getSettings() {
@@ -215,6 +216,13 @@ export async function setPresetFirst(on) {
 export async function setLang(lang) {
   if (isTauri) return invoke('set_lang', { lang })
   mockSettings.lang = lang
+  return JSON.parse(JSON.stringify(mockSettings))
+}
+
+// 显示/隐藏主面板的全局快捷键：传空串表示清空。后端注册成功才落盘，失败抛错由调用方提示
+export async function setHotkey(shortcut) {
+  if (isTauri) return invoke('set_hotkey', { shortcut })
+  mockSettings.hotkey = shortcut || ''
   return JSON.parse(JSON.stringify(mockSettings))
 }
 

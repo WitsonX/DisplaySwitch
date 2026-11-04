@@ -16,7 +16,10 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, LogicalSize, Manager, PhysicalPosition, WindowEvent,
+    AppHandle, LogicalSize, Manager, PhysicalPosition, Position, Size, WindowEvent,
+};
+use tauri_plugin_global_shortcut::{
+    Builder as GlobalShortcutBuilder, GlobalShortcutExt, Shortcut, ShortcutState,
 };
 
 const PANEL_WIDTH: f64 = 600.0;
@@ -39,6 +42,12 @@ fn is_quick_switch_arg(arg: &str) -> bool {
 // 快速切换期间（点下场景到倒计时结束）禁止「失焦即隐藏」：displayplacer 重排
 // 显示器会让面板瞬间失焦，不锁住的话用户看不到倒计时，也没法点取消
 static PANEL_LOCK: AtomicBool = AtomicBool::new(false);
+
+// 托盘「再点一下收起」：点托盘时面板会先失焦触发即时隐藏，等托盘抬起事件到达时窗口
+// 已经隐藏，于是又被弹回来，导致第二下收不起。改成失焦后延迟隐藏，这段窗口期内若收到
+// 托盘点击就判定为「收起」，取消待隐藏并立即隐藏
+static BLUR_HIDE_PENDING: AtomicBool = AtomicBool::new(false);
+const BLUR_HIDE_DELAY_MS: u64 = 300;
 
 #[tauri::command]
 fn set_panel_lock(locked: bool) -> Result<(), String> {
@@ -273,7 +282,38 @@ fn hide_panel(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-// 设置面板「关于」里的退出：没有 Dock 图标后，这是托盘右键以外的第二个退出入口
+// 设置显示/隐藏主面板的全局快捷键（None / 空串表示清空）。先验格式再动已注册的，
+// 免得非法输入把当前可用那个顺手清掉；新键注册失败（多半被别的 App 占用）就回滚旧的
+#[tauri::command]
+fn set_hotkey(app: AppHandle, shortcut: Option<String>) -> Result<settings::AppSettings, String> {
+    let new = shortcut.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let parsed: Option<Shortcut> = match &new {
+        Some(s) => Some(s.parse::<Shortcut>().map_err(|_| {
+            lang::tr("快捷键格式无效", "Invalid shortcut format").to_string()
+        })?),
+        None => None,
+    };
+
+    let old = settings::load_hotkey(&app);
+    let _ = app.global_shortcut().unregister_all();
+
+    if let Some(sc) = parsed {
+        if let Err(e) = app.global_shortcut().register(sc) {
+            if let Some(o) = old.and_then(|o| o.parse::<Shortcut>().ok()) {
+                let _ = app.global_shortcut().register(o);
+            }
+            return Err(lang::tr_fill(
+                "快捷键注册失败，可能已被其他应用占用：{e}",
+                "Could not register the shortcut (it may be taken by another app): {e}",
+                &[("e", &e)],
+            ));
+        }
+    }
+    settings::set_hotkey(&app, new)
+}
+
+// 退出：托盘右键菜单、设置面板底部按钮，以及前端拦下来的 ⌘Q 都走这里。
+// ⌘Q 只在面板可见时被收到（失焦即收起），不会误退当时那个前台 App
 #[tauri::command]
 fn quit_app(app: AppHandle) -> Result<(), String> {
     app.exit(0);
@@ -375,7 +415,80 @@ fn hide_panel_window(app: &AppHandle) {
     let _ = window.hide();
 }
 
+// 失焦后延迟隐藏：挂起一个待隐藏标志并开定时器，到点时若标志没被托盘点击抢掉才真隐。
+// 抢走（swap 置 false）则本次不隐，交给托盘逻辑处理
+fn schedule_blur_hide(app: &AppHandle) {
+    BLUR_HIDE_PENDING.store(true, Ordering::SeqCst);
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(BLUR_HIDE_DELAY_MS));
+        if BLUR_HIDE_PENDING.swap(false, Ordering::SeqCst) {
+            hide_panel_window(&app);
+        }
+    });
+}
+
+// 全局快捷键没有托盘坐标做锚点，按单/双屏宽度在主屏居中弹出
+fn show_panel_centered(app: &AppHandle, view: &str) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let width = if LAST_DISPLAY_COUNT.load(Ordering::SeqCst) <= 1 {
+        SINGLE_PANEL_WIDTH
+    } else {
+        PANEL_WIDTH
+    };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let _ = window.set_size(LogicalSize::new(width, PANEL_HEIGHT));
+    if let Ok(Some(monitor)) = app.primary_monitor() {
+        let pos = monitor.position();
+        let size = monitor.size();
+        let x = (pos.x as f64 + (size.width as f64 - width * scale) / 2.0).max(0.0);
+        let y = (pos.y as f64 + (size.height as f64 - PANEL_HEIGHT * scale) / 2.0).max(0.0);
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    }
+    show_panel(app, view);
+}
+
+// 快捷键触发：优先贴着托盘图标弹出（和手动点托盘同一落点），拿不到托盘位置时回退主屏居中
+fn toggle_panel_hotkey(app: &AppHandle) {
+    if let Some(anchor) = tray_anchor(app) {
+        // toggle_panel_at 内部已处理「可见则收起」
+        toggle_panel_at(app, anchor);
+        return;
+    }
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    if window.is_visible().unwrap_or(false) {
+        hide_panel_window(app);
+    } else {
+        show_panel_centered(app, "main");
+    }
+}
+
+// 托盘图标的水平中心 + 顶边，作为面板锚点（物理像素）。macOS 可取到，
+// Linux 不支持或拿不到时返回 None，交给居中回退
+fn tray_anchor(app: &AppHandle) -> Option<PhysicalPosition<f64>> {
+    let rect = app.tray_by_id("main-tray")?.rect().ok()??;
+    // macOS 下 tray rect 是物理像素；Logical 分支极少见，按原值近似处理
+    let (px, py) = match rect.position {
+        Position::Physical(p) => (p.x as f64, p.y as f64),
+        Position::Logical(l) => (l.x, l.y),
+    };
+    let w = match rect.size {
+        Size::Physical(s) => s.width as f64,
+        Size::Logical(l) => l.width,
+    };
+    Some(PhysicalPosition::new(px + w / 2.0, py))
+}
+
 fn toggle_panel_at(app: &AppHandle, position: PhysicalPosition<f64>) {
+    // 失焦延迟隐藏的窗口期内又点托盘 → 判定为「再点一下收起」：抢掉待隐藏标志，立即隐藏
+    if BLUR_HIDE_PENDING.swap(false, Ordering::SeqCst) {
+        hide_panel_window(app);
+        return;
+    }
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
@@ -456,6 +569,17 @@ pub fn run() {
                 show_panel(app, "main");
             }
         }))
+        // 全局快捷键：用户在设置里自定义“显示/隐藏主面板”，默认空。处理器只负责切换面板，
+        // 具体注册哪个键由 set_hotkey 命令与启动恢复逻辑控制（同一时刻最多一个）
+        .plugin(
+            GlobalShortcutBuilder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        toggle_panel_hotkey(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             #[cfg(target_os = "macos")]
             {
@@ -508,13 +632,21 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // 恢复上次保存的全局快捷键（默认为空，没设过就不注册）；解析失败静默跳过
+            if let Some(hk) = settings::load_hotkey(app.handle()) {
+                if let Ok(sc) = hk.parse::<Shortcut>() {
+                    let _ = app.handle().global_shortcut().register(sc);
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
             if window.label() == "main" {
                 if let WindowEvent::Focused(false) = event {
-                    if !PANEL_LOCK.load(Ordering::SeqCst) {
-                        let _ = window.hide();
+                    // 只在还可见时排延迟隐藏；自己 hide() 触发的后续失焦事件此时已不可见，不重复挂起
+                    if !PANEL_LOCK.load(Ordering::SeqCst) && window.is_visible().unwrap_or(false) {
+                        schedule_blur_hide(window.app_handle());
                     }
                 }
             }
@@ -532,6 +664,7 @@ pub fn run() {
             set_preset_first,
             set_lang,
             hide_panel,
+            set_hotkey,
             quit_app,
             quick_switch_launched,
             set_panel_lock,
@@ -556,5 +689,24 @@ mod tests {
         assert!(!is_release_page("https://evil.test/WitsonX/DisplaySwitch/releases"));
         assert!(!is_release_page("http://github.com/WitsonX/DisplaySwitch/releases/tag/v1"));
         assert!(!is_release_page("https://github.com/WitsonX/DisplaySwitchX/releases"));
+    }
+
+    // 前端录入产出的规范串（修饰符 + keyboard-types Code 名）必须能被插件解析，
+    // 否则注册时才报错、用户只会看到一句莫名的失败
+    #[test]
+    fn frontend_hotkey_strings_parse() {
+        use super::Shortcut;
+        for s in [
+            "Command+Shift+D",
+            "Command+1",
+            "Alt+Space",
+            "Command+Control+Alt+Shift+F5",
+            "Command+ArrowUp",
+            "Command+Comma",
+        ] {
+            assert!(s.parse::<Shortcut>().is_ok(), "{s} should parse");
+        }
+        assert!("Shift+A".parse::<Shortcut>().is_ok());
+        assert!("NotAKey+Foo".parse::<Shortcut>().is_err());
     }
 }

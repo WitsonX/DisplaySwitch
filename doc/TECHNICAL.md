@@ -12,7 +12,12 @@
 - **质感**：`window-vibrancy` 的 `apply_vibrancy(NSVisualEffectMaterial::HudWindow)`，配合圆角卡片就是 macOS 那套 HUD 毛玻璃。
 - **不进程序坞**：`src-tauri/Info.plist` 里的 `LSUIElement = true` 让 LaunchServices 在进程登记这一步就把它当后台 Agent，没有 Dock 图标、不占 ⌘Tab，只剩菜单栏那枚图标；`setup` 里那次 `set_activation_policy(Accessory)` 是给不读 Info.plist 的 `cargo run` 裸二进制兜底（开发时 Dock 会闪一下再消失，属正常）。
 - **失焦即隐藏**：`WindowEvent::Focused(false)` → `hide_panel_window()`。所以点面板外任意处、切到别的 App，面板自己就收了；顶栏 × 走 `hide_panel` 命令，效果相同。唯一的例外是快速切换：从点下场景那一刻起 `PANEL_LOCK` 上锁，见「外部调用：快速切换」。
+- **⌘Q 退出**：前端 `mounted` 挂一个 `window` 上的 `keydown`（`App.vue` 的 `onKeydown`），命中 ⌘Q 就 `preventDefault` 后走 `quit_app`。之所以不用担心误退别的 App：面板一失焦就收起，所以面板可见的这段时间键盘焦点必定在 DS，按键只走 DS 的响应链，菜单栏上别人的「退出 XX ⌘Q」拿不到它（快速切换 `PANEL_LOCK` 上锁、面板强行留在屏幕上时是例外，但那时焦点在谁那儿 ⌘Q 就归谁，跟系统习惯一致）。观感上仍可能让人犹豫，但又不想常驻一行字占版面，所以照浏览器的做法做临时提示：`keydown` / `keyup` 维护 `cmdHeld`，单按 ⌘ 时居中浮出一枚深色胶囊 `quitHint`（「按 ⌘Q 键即可退出」），松开 ⌘ 就消失；`window` 的 `blur` 再兼一道，因为按着 ⌘ 切走 App 时 `keyup` 不会补发。胶囊 `pointer-events:none`，不挡点选，也不会跟着面板重新弹出时残留。
+- **⌘1–⌘9 选场景**：序号就是 `presets` 的显示顺序（拖过的排在前面），第 10 个起不编号也不响应；设置视图和保存/改名输入框还在编辑时不接。键盘和鼠标走的是同一个 `applyPreset`，参数取自同一份 `presets`，没分支差异；但 `onKeydown` 开头先挡一次 `e.repeat`——macOS 的自动重复会把按住不放的 ⌘1 连发成几十次 keydown，等于几十遍 `apply_config`，显示器反复重排、闪得比鼠标点一下严重得多（鼠标没这条路径，两边体感不一致的根源在重复不在方法）。按住 ⌘ 时每个胶囊正上方浮出一枚深色小方框 `⌘n`（`.pill-kbd`）——绝对定位加 `bottom:calc(100%+6px)`，所以它不参与排版：按下那一下整行零重排，也不用像内联角标那样常年留位。第一个胶囊的方框正好落在「场景预设」那行字上，所以按住 ⌘ 期间把标题 `visibility:hidden`（不是 v-if，位置留着，松开原样回来，胶囊几何不变）。方框和悬停气泡占的是胶囊上方同一条带，所以按住期间把气泡隐掉（`tip && !cmdHeld`），并在松开 ⌘ 的 `keyup` 里补跑一次 `clampTip`——按住期间那次 `$nextTick` 夹位没走到，不补的话气泡可能出条边界。气泡仍然只有一行，只在描述末尾接一段更暗的「 · ⌘n」（`.tip-kbd`，`white-space:nowrap`，免得描述折行时把序号孤零零甩到第二行）；序号框只在按住 ⌘ 时出现、那时气泡是隐的，所以两处不会同屏重复。
+- **切换互斥**：`switching` 这枚标志由 `pushDraft` 和 `applyPreset` 共用（分辨率、角色、场景三条路径都从这里走），一次切换从 `apply_config` 到末尾 `load()` 跑完之前，后来的点击和按键直接丢弃，`finally` 负责释放（`load()` 自己把异常包在 `try` 里吐成 `error`，不会抛出来把锁卡死）。不锁的话两次重排叠在一起、闪得更久，后一次 `load()` 还会把前一次的读数盖掉。键盘侧已经先挡了 `e.repeat`，这里是再兜一层：按住 ⌘1 不放、连点两下、切到一半再按，都只跑一次。
+- **全局快捷键**：`tauri-plugin-global-shortcut`（只用 Rust 侧，不装 JS 插件、不加 capability，和自启动同一个路子）。前端在设置里对 `window` 挂一次 capture 阶段的 `keydown`（抢在 App 的 ⌘Q / ⌘1–9 之前，`preventDefault` + `stopPropagation`），把组合键串（`Command+Shift+D` 这种，修饰键名用 `Command`/`Control`/`Alt`/`Shift`，和 keyboard-types 的解析名对齐）交给 `set_hotkey`；后端先 `parse::<Shortcut>()` 校验格式，再 `unregister_all()` 注册新键，注册失败（组合键被别的 App 占用）就把旧键注册回去并返回错误，旧绑定不落盘。`settings.json` 里的 `hotkey` 字段空串读成 `None`；`setup` 里读设置恢复注册，所以手动删文件、或被占用，下次启动就是不注册，界面如实显示「未设置」。触发时先取托盘图标 `rect()` 算出锚点走 `toggle_panel_at`——面板可见就收起，否则贴着托盘弹出；拿不到托盘坐标（Linux 或异常）才回落主屏居中。前端侧的录入口子：只认字母、数字和 F1–F12 作主键；纯修饰键不提交、继续等下一个键；不含 ⌘/⌃/⌥ 的组合（裸键或仅 ⇧）拒绝并在说明位浮出「需包含 ⌘ / ⌃ / ⌥」；单按 Esc（不带修饰键）取消录入。
 - **托盘**：`TrayIconBuilder::with_id("main-tray")` + `icon_as_template(true)`。左键弹出/收起，右键是原生菜单（显示面板 / 设置… / 退出）。原生菜单不会跟网页一起重渲染，所以语言变了要就地 `tray_by_id("main-tray").set_menu(Some(tray_menu(app)))` 重建一份。
+- **「失焦即隐藏」延迟 300ms**：点托盘会让面板先失焦，原来的即时隐藏把窗口收掉，托盘的抬起事件随后到达、又被 `toggle_panel_at` 弹回来——第二下永远收不起。现在 `Focused(false)` 走 `schedule_blur_hide`：挂一枚 `BLUR_HIDE_PENDING` 标志并起 300ms 定时器，到点时标志没被抢掉才真隐；托盘点击和热键切换进来先 `swap` 抢标志，抢到就是「再点一下收起」，直接隐藏、不再弹出。自己 `hide()` 触发的失焦此时窗口已不可见，不再重复挂起；`PANEL_LOCK`（快速切换倒计时）期间整个分支跳过。
 - **定位**：托盘点击回传的坐标是物理像素，按 `window.scale_factor()` 换算后再定位；窗口尺寸本身用逻辑点表达，避免 Retina 2x 下两套单位混用。
 - **热插拔**：`setup` 里注册 `CGDisplayRegisterReconfigurationCallback`。合盖/开盖/插拔会连续触发多次回调，所以用一个自增序号做 800ms 防抖，静默期过后只 `emit("displays-changed")` 一次；前端 `listen` 到就重新 `load()`，面板重新拿到焦点时也会刷一次。
 
@@ -27,7 +32,7 @@
 | `save_preset` | `name`, `config` | — | 存一整套配置 |
 | `list_presets` | — | `PresetEntry[]` | 列出全部预设（含未接入显示器的） |
 | `delete_preset` | `name` | — | 删除 |
-| `get_settings` | — | `AppSettings` | 收藏、置顶开关、语言偏好、方案顺序、预设优先开关 |
+| `get_settings` | — | `AppSettings` | 收藏、置顶开关、语言偏好、方案顺序、预设优先开关、全局快捷键 |
 | `toggle_favorite` | `displayId`, `res` | `AppSettings` | 给某屏收藏/取消一档 |
 | `set_pin_favorites` | `pin` | `AppSettings` | 收藏是否置顶 |
 | `set_lang` | `lang` | `AppSettings` | 存语言偏好，并重建托盘菜单 |
@@ -40,8 +45,9 @@
 | `set_preset_first` | `on` | `AppSettings` | 预设场景优先开关 |
 | `quick_switch_launched` | — | `bool` | 前端挂载后取走启动参数标记（读一次即清零）；为真时后端顺带按屏数定宽、居中弹出面板 |
 | `set_panel_lock` | `locked` | — | 锁住/放开「失焦即隐藏」，快速切换倒计时期间用 |
+| `set_hotkey` | `shortcut` | `AppSettings` | 录入/清除全局快捷键：先解析校验再落盘，注册失败（组合键被占用）时把旧键注册回去、报错不写盘 |
 
-六个设置类命令（`get_settings` / `toggle_favorite` / `set_pin_favorites` / `set_lang` / `set_preset_order` / `set_preset_first`）**每次都回传最新全量设置**，前端不做本地推断——少一处「前端以为改了、后端没落盘」的错位。
+七个设置类命令（`get_settings` / `toggle_favorite` / `set_pin_favorites` / `set_lang` / `set_preset_order` / `set_preset_first` / `set_hotkey`）**每次都回传最新全量设置**，前端不做本地推断——少一处「前端以为改了、后端没落盘」的错位。
 
 App 自定义命令不需要 capability 条目，`src-tauri/capabilities/default.json` 里只有 `core:default`；插件命令（自启动）才需要，这里也通过 Rust 包一层避开了。
 
@@ -82,10 +88,17 @@ App 自定义命令不需要 capability 条目，`src-tauri/capabilities/default
 - **设置**：`~/Library/Application Support/com.displayswitch.app/settings.json`（`src-tauri/src/settings.rs`），形如：
 
 ```json
-{ "favorites": { "s1001": ["1512x982"] }, "pinFavorites": true, "lang": "auto" }
+{
+  "favorites": { "s1001": ["1512x982"] },
+  "pinFavorites": true,
+  "lang": "auto",
+  "presetOrder": ["方案A", "方案B"],
+  "presetFirst": false,
+  "hotkey": "Command+Shift+D"
+}
 ```
 
-`pinFavorites` 缺字段按 `true` 读、`lang` 缺字段等同于 `"auto"`——老文件不加迁移也能保持默认行为。收藏按显示器分别记录（serial id + 分辨率），置顶组内仍按原始顺序排。
+`pinFavorites` 缺字段按 `true` 读、`presetFirst` 缺字段按 `false` 读、`lang` 缺字段等同于 `"auto"`、`hotkey` 的空串读成 `None`——老文件不加迁移也能保持默认行为。`presetOrder` 是没拖过就为空的数组（空 = 按读盘顺序显示），`hotkey` 只有成功注册过才落盘。收藏按显示器分别记录（serial id + 分辨率），置顶组内仍按原始顺序排。
 
 ## 国际化
 
