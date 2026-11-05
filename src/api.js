@@ -47,6 +47,8 @@ function normalizeState(s) {
       enabled: d.enabled,
       main: !!d.main,
       mirrorOf: d.mirror_of || null,
+      // 系统坐标系里的位置（逻辑点），后端是 (x, y) 元组 → JSON 数组；应用配置时原样带回以保留排列
+      origin: d.origin ?? null,
       sizeIn: builtin ? null : d.size_in || null
     }
   })
@@ -59,6 +61,7 @@ const mockState = {
       serial_id: 's1001',
       type_str: 'MacBook built in screen',
       model: 'Color LCD',
+      origin: [0, 0],
       res: '1512x982',
       hz: 120,
       color_depth: 8,
@@ -81,6 +84,7 @@ const mockState = {
       serial_id: 's1002',
       type_str: '27 inch external screen',
       model: 'U2790B',
+      origin: [1512, -200],
       res: '3840x2160',
       hz: 60,
       color_depth: 8,
@@ -104,6 +108,7 @@ const mockState = {
       serial_id: 's1003',
       type_str: '32 inch external screen',
       model: 'U3223Q',
+      origin: [1512, -200],
       res: '3840x2160',
       hz: 60,
       color_depth: 8,
@@ -259,4 +264,10 @@ export async function setAutostart(enabled) {
 export async function openUrl(url) {
   if (isTauri) return invoke('open_url', { url })
   window.open(url, '_blank', 'noopener')
+}
+
+// 系统自带的「显示器」设置面板：排列、色彩配置这类快切屏管不到的项。
+// 深链在后端写死，浏览器预览里开不了，所以不给 mock 分支造返回值
+export async function openDisplaySettings() {
+  if (isTauri) return invoke('open_display_settings')
 }

@@ -18,6 +18,20 @@ const SOURCES = [
   }
 ]
 
+// 关于页要用的仓库地址。owner / repo 跟上面检查更新用的是同一组常量，换账号只改一处。
+// 主页带尾斜杠是后端的要求：`open_url` 的白名单（lib.rs 的 RELEASE_PAGES）是带斜杠的
+// 前缀匹配，不带斜杠的裸仓库名会被当成越界拦掉。
+export const REPO_LINKS = {
+  home: {
+    github: `https://github.com/${OWNER.github}/${REPO}/`,
+    gitee: `https://gitee.com/${OWNER.gitee}/${REPO}/`
+  },
+  feedback: {
+    github: `https://github.com/${OWNER.github}/${REPO}/issues`,
+    gitee: `https://gitee.com/${OWNER.gitee}/${REPO}/issues`
+  }
+}
+
 // tag 直接进拼接的 URL，只放过版本号该有的字符
 const TAG_RE = /^v?[0-9]+(\.[0-9]+){0,3}([-.+][0-9A-Za-z.-]+)?$/
 

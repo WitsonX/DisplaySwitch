@@ -128,9 +128,59 @@ fn spec_width(res: &str) -> i32 {
         .unwrap_or(1920)
 }
 
+fn res_size(res: &str) -> (i32, i32) {
+    let normalized = normalize_res(res);
+    let (w, h) = normalized.split_once('x').unwrap_or(("", ""));
+    (w.trim().parse().unwrap_or(0), h.trim().parse().unwrap_or(0))
+}
+
+// 屏在系统坐标系里占的矩形；旋转 90/270 时逻辑宽高互换
+fn display_rect(d: &ApplyDisplay, origin: (i32, i32)) -> (i32, i32, i32, i32) {
+    let (w, h) = res_size(&d.res);
+    let (w, h) = if d.degree % 180 == 0 { (w, h) } else { (h, w) };
+    (origin.0, origin.1, origin.0 + w, origin.1 + h)
+}
+
+fn rects_overlap(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> bool {
+    a.0 < b.2 && b.0 < a.2 && a.1 < b.3 && b.1 < a.3
+}
+
+// 保留用户在系统设置里拖好的排列：原样拿过来，只平移到「主屏 = (0,0)」这个系统锚点上
+// （displayplacer 把 origin (0,0) 那块当主屏，所以换主屏时必须整套平移，不能照抄旧值）。
+// 两种情况返回 None 交给自动布局：任一块屏没带 origin，或平移后矩形重叠
+// （典型场景是解镜像：两块屏的历史位置都在 (0,0)，原样保留反而不合法）
+fn preserved_layout(order: &[&ApplyDisplay]) -> Option<Vec<(i32, i32)>> {
+    let (mx, my) = order.first()?.origin?;
+    let mut out = Vec::with_capacity(order.len());
+    for d in order {
+        let (x, y) = d.origin?;
+        out.push((x - mx, y - my));
+    }
+    for i in 0..out.len() {
+        let ra = display_rect(order[i], out[i]);
+        for j in 0..i {
+            if rects_overlap(ra, display_rect(order[j], out[j])) {
+                return None;
+            }
+        }
+    }
+    Some(out)
+}
+
+// 自动布局：主屏 (0,0)，其余按 res 宽度从左到右排开，保证不重叠
+fn auto_layout(order: &[&ApplyDisplay]) -> Vec<(i32, i32)> {
+    let mut out = Vec::with_capacity(order.len());
+    let mut x = 0i32;
+    for d in order {
+        out.push((x, 0));
+        x += spec_width(&normalize_res(&d.res));
+    }
+    out
+}
+
 // v2 角色模型 → displayplacer 多组 spec：
-// 镜像组合并为 id:目标+从1+从2（分辨率用目标屏的）；主显示器放 origin:(0,0)
-// （displayplacer 借此设置系统主屏），其余组按宽度从左到右排开避免重叠。
+// 镜像组合并为 id:目标+从1+从2（分辨率用目标屏的）。位置优先沿用调用方带进来的当前
+// origin（只平移到主屏锚点），没带或拼不出合法布局时才自动排：主屏 (0,0)，其余按宽度从左到右。
 fn build_specs(config: &ApplyConfig) -> Result<Vec<String>, String> {
     if config.displays.is_empty() {
         return Err(lang::tr("显示器列表为空", "The display list is empty").to_string());
@@ -175,8 +225,8 @@ fn build_specs(config: &ApplyConfig) -> Result<Vec<String>, String> {
     order.extend(config.displays.iter().filter(|d| d.role == "extend"));
 
     let mut specs = Vec::new();
-    let mut x = 0i32;
-    for d in order {
+    let origins = preserved_layout(&order).unwrap_or_else(|| auto_layout(&order));
+    for (d, (ox, oy)) in order.iter().zip(origins) {
         let followers: Vec<&ApplyDisplay> = config
             .displays
             .iter()
@@ -187,9 +237,8 @@ fn build_specs(config: &ApplyConfig) -> Result<Vec<String>, String> {
             ids.push('+');
             ids.push_str(&f.ctx_id);
         }
-        let origin = format!("({},{})", x, 0);
+        let origin = format!("({},{})", ox, oy);
         specs.push(build_spec(d, &ids, &origin, followers.is_empty()));
-        x += spec_width(&normalize_res(&d.res));
     }
     Ok(specs)
 }
@@ -340,8 +389,9 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
     manager.is_enabled().map_err(|e| e.to_string())
 }
 
-// 「检查更新」查到新版后跳发布页。地址是前端拼出来的，但 `open` 把它交给系统浏览器，
-// 所以后端只放过我们自己仓库的发布页。
+// 我们自己仓库的页面：「检查更新」跳发布页，关于页跳主页和 issue 页。地址都是前端拼出来的，
+// 但 `open` 把它交给系统浏览器，所以后端再收一次口子。带尾斜杠的前缀匹配——
+// 不带斜杠会连 `DisplaySwitchX` 一起放过，但代价是裸仓库名匹配不上，主页得自己带上斜杠
 const RELEASE_PAGES: [&str; 2] = [
     "https://github.com/WitsonX/DisplaySwitch/",
     "https://gitee.com/Witson/DisplaySwitch/",
@@ -355,8 +405,8 @@ fn is_release_page(url: &str) -> bool {
 fn open_url(url: String) -> Result<(), String> {
     if !is_release_page(&url) {
         return Err(lang::tr(
-            "只允许打开发布页链接",
-            "Only release pages can be opened",
+            "只允许打开本项目仓库的链接",
+            "Only links to this project's repositories can be opened",
         )
         .to_string());
     }
@@ -367,6 +417,47 @@ fn open_url(url: String) -> Result<(), String> {
             &[("e", &e)],
         )
     })?;
+    Ok(())
+}
+
+// 系统自带「显示器」设置面板的深链。macOS 13 起换成了新式 pane id，12 及以前只认旧的那串；
+// 不能靠 `open` 的返回码兜底——给它一个不存在的 id 它照样返回 0，只是把设置开到首页
+const DISPLAYS_PANE_MODERN: &str =
+    "x-apple.systempreferences:com.apple.Displays-Settings.extension";
+const DISPLAYS_PANE_LEGACY: &str = "x-apple.systempreferences:com.apple.preference.displays";
+
+// 直接从 SystemVersion.plist 取主版本号：它是纯文本 XML，读一次比 fork 一个 sw_vers 便宜
+fn macos_major_version() -> Option<u32> {
+    let text = std::fs::read_to_string("/System/Library/CoreServices/SystemVersion.plist").ok()?;
+    let after = text.find("<key>ProductVersion</key>")?;
+    let tail = &text[after..];
+    let begin = tail.find("<string>")? + "<string>".len();
+    let end = begin + tail[begin..].find("</string>")?;
+    tail[begin..end].split('.').next()?.parse().ok()
+}
+
+fn displays_pane() -> &'static str {
+    match macos_major_version() {
+        Some(v) if v < 13 => DISPLAYS_PANE_LEGACY,
+        // 正常这份 plist 必定存在、读得到；读不到时走新式，因为目标用户几乎都在 13 以上
+        _ => DISPLAYS_PANE_MODERN,
+    }
+}
+
+// 排列对齐、色彩配置这些 displayplacer 覆盖不了的项交给系统面板。地址是按版本选出来的常量，
+// 所以不复用 open_url 的发布页白名单——那道校验防的是前端拼出来的外部地址
+#[tauri::command]
+fn open_display_settings() -> Result<(), String> {
+    Command::new("open")
+        .arg(displays_pane())
+        .spawn()
+        .map_err(|e| {
+            lang::tr_fill(
+                "无法打开系统显示器设置：{e}",
+                "Could not open the system Displays settings: {e}",
+                &[("e", &e)],
+            )
+        })?;
     Ok(())
 }
 
@@ -670,7 +761,8 @@ pub fn run() {
             set_panel_lock,
             get_autostart,
             set_autostart,
-            open_url
+            open_url,
+            open_display_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -678,7 +770,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::is_release_page;
+    use super::{build_specs, is_release_page, ApplyConfig, ApplyDisplay};
 
     #[test]
     fn only_our_release_pages_are_allowed() {
@@ -689,6 +781,12 @@ mod tests {
         assert!(!is_release_page("https://evil.test/WitsonX/DisplaySwitch/releases"));
         assert!(!is_release_page("http://github.com/WitsonX/DisplaySwitch/releases/tag/v1"));
         assert!(!is_release_page("https://github.com/WitsonX/DisplaySwitchX/releases"));
+        // 关于页的主页 / issue 页也在白名单里；裸仓库名除外，所以拼 URL 时必须带尾斜杠
+        assert!(is_release_page("https://github.com/WitsonX/DisplaySwitch/"));
+        assert!(is_release_page("https://gitee.com/Witson/DisplaySwitch/"));
+        assert!(is_release_page("https://github.com/WitsonX/DisplaySwitch/issues"));
+        assert!(!is_release_page("https://github.com/WitsonX/DisplaySwitch"));
+        assert!(!is_release_page("https://gitee.com/Witson/DisplaySwitch"));
     }
 
     // 前端录入产出的规范串（修饰符 + keyboard-types Code 名）必须能被插件解析，
@@ -708,5 +806,120 @@ mod tests {
         }
         assert!("Shift+A".parse::<Shortcut>().is_ok());
         assert!("NotAKey+Foo".parse::<Shortcut>().is_err());
+    }
+
+    // 13 是系统设置换 pane id 的分界：真机上版本必定读得出，读出的主版本决定选哪串深链
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn displays_pane_follows_version() {
+        use super::{
+            displays_pane, macos_major_version, DISPLAYS_PANE_LEGACY, DISPLAYS_PANE_MODERN,
+        };
+        let major = macos_major_version().expect("ProductVersion should parse on a real Mac");
+        let want = if major < 13 {
+            DISPLAYS_PANE_LEGACY
+        } else {
+            DISPLAYS_PANE_MODERN
+        };
+        assert_eq!(displays_pane(), want, "macOS {major}");
+    }
+
+    fn disp(id: &str, res: &str, role: &str, origin: Option<(i32, i32)>) -> ApplyDisplay {
+        ApplyDisplay {
+            ctx_id: id.to_string(),
+            role: role.to_string(),
+            mirror_target: None,
+            res: res.to_string(),
+            scaling: true,
+            hz: None,
+            color_depth: None,
+            degree: 0,
+            enabled: true,
+            origin,
+        }
+    }
+
+    fn spec_origin(spec: &str) -> String {
+        spec.split("origin:")
+            .nth(1)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .to_string()
+    }
+
+    // 带进来当前 origin 就不能再动手：系统设置里拖好的上下错位得原样回去
+    #[test]
+    fn keeps_the_arranged_offset() {
+        let cfg = ApplyConfig {
+            displays: vec![
+                disp("s1", "1512x982", "main", Some((0, 0))),
+                disp("s2", "2560x1440", "extend", Some((1512, -200))),
+            ],
+        };
+        let specs = build_specs(&cfg).unwrap();
+        assert_eq!(spec_origin(&specs[0]), "(0,0)");
+        assert_eq!(spec_origin(&specs[1]), "(1512,-200)");
+    }
+
+    // 换主屏：新主屏归 (0,0)，其余按相对位置平移，整套布局不能走形
+    #[test]
+    fn translates_when_the_main_display_changes() {
+        let cfg = ApplyConfig {
+            displays: vec![
+                disp("s2", "2560x1440", "main", Some((1512, -200))),
+                disp("s1", "1512x982", "extend", Some((0, 0))),
+            ],
+        };
+        let specs = build_specs(&cfg).unwrap();
+        assert_eq!(spec_origin(&specs[0]), "(0,0)");
+        assert_eq!(spec_origin(&specs[1]), "(-1512,200)");
+    }
+
+    // 老预设不带 origin：行为跟加这个功能之前完全一致
+    #[test]
+    fn missing_origin_falls_back_to_auto_layout() {
+        let cfg = ApplyConfig {
+            displays: vec![
+                disp("s1", "1512x982", "main", Some((0, 0))),
+                disp("s2", "2560x1440", "extend", None),
+            ],
+        };
+        let specs = build_specs(&cfg).unwrap();
+        assert_eq!(spec_origin(&specs[0]), "(0,0)");
+        assert_eq!(spec_origin(&specs[1]), "(1512,0)");
+    }
+
+    // 解镜像：两块屏的历史位置都在 (0,0)，照搬会重叠 → 整批回落自动布局
+    #[test]
+    fn overlapping_history_falls_back_to_auto_layout() {
+        let cfg = ApplyConfig {
+            displays: vec![
+                disp("s1", "1512x982", "main", Some((0, 0))),
+                disp("s2", "2560x1440", "extend", Some((0, 0))),
+            ],
+        };
+        let specs = build_specs(&cfg).unwrap();
+        assert_eq!(spec_origin(&specs[0]), "(0,0)");
+        assert_eq!(spec_origin(&specs[1]), "(1512,0)");
+    }
+
+    // 镜像从屏不占独立坐标位（合并进 id:A+B），只要主屏+扩展屏带全就行
+    #[test]
+    fn mirror_followers_do_not_take_a_slot() {
+        let mut follower = disp("s3", "1512x982", "mirror", Some((0, 0)));
+        follower.mirror_target = Some("s1".to_string());
+        let cfg = ApplyConfig {
+            displays: vec![
+                disp("s1", "1512x982", "main", Some((0, 0))),
+                follower,
+                disp("s2", "2560x1440", "extend", Some((1512, -200))),
+            ],
+        };
+        let specs = build_specs(&cfg).unwrap();
+        assert_eq!(specs.len(), 2);
+        assert!(specs[0].contains("id:s1+s3"), "{}", specs[0]);
+        assert_eq!(spec_origin(&specs[1]), "(1512,-200)");
     }
 }

@@ -20,6 +20,7 @@ Everything user-facing lives in the [README](../README.en.md). This file is only
 - **Hide-on-blur is delayed 300ms**: clicking the tray first makes the panel lose focus, and the old instant hide removed the window before the tray's mouse-up arrived — `toggle_panel_at` then saw a hidden window and popped it back out, so the second click could never close it. `Focused(false)` now calls `schedule_blur_hide`: it raises a `BLUR_HIDE_PENDING` flag and starts a 300ms timer, and only hides on expiry if nobody took the flag; the tray click and the hotkey toggle both `swap` it first, and winning the swap means "the second click closes it" — hide immediately, don't re-show. A `hide()` of our own already left the window invisible, so its follow-up blur event does not schedule a second timer, and the whole branch is skipped while `PANEL_LOCK` is held (quick-switch countdown).
 - **Positioning**: the click coordinates reported by the tray are physical pixels, so they are divided by `window.scale_factor()` before positioning; window size itself is expressed in logical points. Mixing the two is what makes Retina 2x placement go wrong.
 - **Hotplug**: `CGDisplayRegisterReconfigurationCallback` registered in `setup`. Lid close/open and plug/unplug fire the callback several times in a row, so an incrementing sequence number gives an 800ms debounce and only one `emit("displays-changed")`; the frontend `listen`s to it and calls `load()`, which also runs whenever the panel regains focus.
+- **System Displays entry**: a faint glyph at the right end of the "Displays" section header (`App.vue`, `.sys-btn`, `opacity:0.3`, rising to 0.7 once the pointer is on that row and only reaching full strength with the accent colour on hover; a tooltip, no label). The tooltip is a hand-drawn `.sys-tip` rather than the native `title` (the native one follows the cursor and appears on its own schedule), and it has to sit *below* the glyph: the panel body is an `overflow-y:auto` scroll container and this header row is flush with its top edge, so a bubble above would just be clipped away. The entry itself calls the `open_display_settings` command. DisplaySwitch only promises not to scramble the arrangement (see "Applying a configuration"); fine-tuning by dragging, color profiles and the like still live in the system pane, so this entry is an escape hatch rather than a feature. The deep link's pane id changed in macOS 13 (13+ uses `com.apple.Displays-Settings.extension`, 12 and earlier only understand `com.apple.preference.displays`), and `open` returns 0 even for an id that does not exist — it just lands on the settings home page — so there is nothing to fall back on from an exit code. The major version is read from `ProductVersion` in `SystemVersion.plist` instead (plain-text XML, read directly rather than forking `sw_vers`). After the click the frontend calls `closePanel()` itself instead of waiting for the 300ms delayed hide, which would otherwise look like the panel froze for a beat.
 
 ## Tauri command reference
 
@@ -40,7 +41,8 @@ Everything user-facing lives in the [README](../README.en.md). This file is only
 | `quit_app` | — | — | Quits (`app.exit(0)`) |
 | `get_autostart` | — | `bool` | Reads the real LaunchAgent registration state |
 | `set_autostart` | `enabled` | `bool` | Enables/disables login item, returns final state |
-| `open_url` | `url` | — | Release pages only — see "Checking for updates" |
+| `open_url` | `url` | — | Only pages of our own repositories (releases / home / issues) — see "Checking for updates" |
+| `open_display_settings` | — | — | Opens the system Displays settings; the pane id is picked by OS version — see "Architecture and the tray window" |
 | `set_preset_order` | `order` | `AppSettings` | Overwrites the setup order after a drag; an empty array means "never dragged, use the on-disk order" |
 | `set_preset_first` | `on` | `AppSettings` | Saved-presets-first toggle |
 | `quick_switch_launched` | — | `bool` | Consumes the launch-argument flag when the frontend mounts (read once, then cleared); when true the backend also sizes the panel by display count and opens it centered |
@@ -72,9 +74,12 @@ App-defined commands need no capability entry — `src-tauri/capabilities/defaul
 `build_specs()` translates the frontend role draft into displayplacer arguments:
 
 - Mirror groups become one `id:target+slave1+slave2 res:... scaling:on`, taking the target display's resolution.
-- The main display gets `origin:(0,0)` — displayplacer uses origin to decide which display is main, so "who is main" has to be expressed in coordinates.
-- Remaining groups are laid out left to right by width so nothing overlaps.
+- **Positions are reused from the `origin` the caller passes in** (`preserved_layout()`), translated only onto the "main display = `(0,0)`" anchor. displayplacer treats the display at origin `(0,0)` as the main one, so "who is main" has to be expressed in coordinates; when the main display changes, everything else shifts by the same amount and the relative layout is untouched. Before this, the unconditional auto-layout below wiped out whatever vertical offsets the user had dragged in System Settings.
+- Two cases fall back to auto-layout (`auto_layout()`): any display arrives without an `origin`, or the translated rectangles overlap (the typical one is un-mirroring — both panels historically sit at `(0,0)`, so preserving them would be illegal). The fallback is all-or-nothing: half preserved, half reflowed is harder to explain than fully reflowed. Overlap uses the `res` width and height, swapping them when `degree` is 90/270.
+- Auto-layout: main at `(0,0)`, remaining groups left to right by width so nothing overlaps.
 - Standalone displays carry `hz` / `color_depth`; **mirror groups omit them**, because two mirrored panels do not necessarily agree on refresh rate and including it makes the whole command fail.
+
+**Presets do not store coordinates**: arrangement belongs to the physical desk, not to a scene, so `draftToConfig` only carries `origin` on the apply path and drops it before saving. `ApplyDisplay.origin` is an `Option` with `#[serde(default, skip_serializing_if = "Option::is_none")]`, so older preset files parse unchanged and the files we write keep exactly the same shape. When a preset is applied, the frontend fills live coordinates via `withLiveOrigins()` (matched by serial id; a preset only shows up in the bar when all its displays are plugged in, so there is always something to fill).
 
 The frontend enforces the role rules before submitting (main is unique and transfers automatically on demotion, a mirror target can only be the main or an extended display, a mirrored display follows its target's resolution), so the backend always receives a legal combination.
 
@@ -122,6 +127,7 @@ Every backend error string that can reach the user is bilingual. Note that `form
 - **The release URL is assembled from our own constants plus the tag; the API's `html_url` is never used.** Since the tag already passed the whitelist regex, the resulting URL can only be a release page of our own repositories.
 - Opening it goes through the Rust `open_url` command (`Command::new("open")`), which tightens the check once more: only `https://github.com/WitsonX/DisplaySwitch/` and `https://gitee.com/Witson/DisplaySwitch/` prefixes are allowed, anything else returns a bilingual error. `is_release_page()` has a unit test covering prefix confusion and an http downgrade.
 - Once a newer version is found the button turns into "View release" and no longer re-checks. To check again, close and reopen the panel — `v-if` destroys the settings view and the state returns to "Not checked".
+- The very bottom of About is one centered meta row: two "label + links" groups side by side with a thin rule between them (Homepage GitHub · Gitee mirror | Feedback GitHub · Gitee mirror). The links carry only the host name; the "mainland mirror" explanation moved into a separate sentence underneath, and that sentence renders only in the Chinese UI because it tells English readers nothing. The groups stay on one line when they fit and wrap group-wise when they do not (the window is 380px wide in single-display mode), so the row count is deliberately not hard-coded. This row is independent of the Updates row — the update state machine (not checked / checking / up to date / new version) still lives there. The links go through the same `open_url`: their addresses are built in `REPO_LINKS` in `src/update.js`, sharing the owner/repo constants with the update check, so moving accounts is a one-line change. The two homepage links must keep their trailing slash: the whitelist prefixes end in one, so a bare repository name does not match and gets rejected.
 
 ## Autostart
 
@@ -169,7 +175,7 @@ Requirements: macOS (macOS only) + Xcode Command Line Tools + Node.js 18+ + a Ru
 npm install
 npm run tauri dev          # development run (hot reload)
 npm run tauri build        # bundle
-cd src-tauri && cargo test # parser / settings / language / release-allowlist unit tests
+cd src-tauri && cargo test # parser / settings / language / release-allowlist / layout-preservation unit tests
 ```
 
 - Browser preview: `npm run dev`, then http://localhost:5173 — the footer notes it is mock data with no real switching.

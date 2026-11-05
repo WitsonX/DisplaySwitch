@@ -24,6 +24,12 @@ pub struct ApplyDisplay {
     pub color_depth: Option<u8>,
     pub degree: u32,
     pub enabled: bool,
+    // 这块屏在系统坐标系里的位置（逻辑点）。只在「本次应用」里带，预设文件不存：
+    // 排列属于物理工位，跟场景无关，同一份预设不该把另一个工位的排列搬过来。
+    // 缺值时 `build_specs` 回落到自动布局，所以不带这个字段的老预设天然兼容。
+    // skip_serializing_if 保证前端没带时预设文件的 JSON 结构跟以前一模一样
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<(i32, i32)>,
 }
 
 #[derive(Serialize, Clone)]
@@ -79,6 +85,7 @@ impl From<LegacyConfig> for ApplyConfig {
                     color_depth: d.color_depth,
                     degree: d.degree,
                     enabled: d.enabled,
+                    origin: None,
                 }
             })
             .collect();

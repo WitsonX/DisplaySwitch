@@ -39,6 +39,10 @@ const zh = {
   titleDisplays: '显示器',
   titleResolutions: '分辨率',
   titlePresets: '场景预设',
+  // 显示器标题行右端那个淡图标：只有 tooltip，平时不占字位
+  sysDisplaysTip: '打开系统的「显示器」设置',
+  sysDisplaysOpenError: '无法打开系统显示器设置：{e}',
+  sysDisplaysDemo: '演示模式下打不开系统设置',
 
   groupGeneral: '通用',
   groupSaved: '已存方案',
@@ -108,6 +112,12 @@ const zh = {
   aboutDriverKey: '切换驱动',
   aboutDriverVal: '内嵌 displayplacer（MIT 开源）',
   aboutPathKey: '方案存放',
+  // 底部一行三组：标签只说做什么，链接只写站点名，「国内镜像」挪到行下那句说明里
+  aboutHomeKey: '项目主页',
+  aboutFeedbackKey: '反馈建议',
+  linkGithub: 'GitHub',
+  linkGiteeMirror: 'Gitee 镜像',
+  aboutMirrorNote: 'Gitee 为国内镜像站，国内网络访问更快',
   updateName: '更新',
   updateIdle: '未检查',
   updateChecking: '正在检查…',
@@ -166,6 +176,9 @@ const en = {
   titleDisplays: 'Displays',
   titleResolutions: 'Resolution',
   titlePresets: 'Scene presets',
+  sysDisplaysTip: 'Open the system Displays settings',
+  sysDisplaysOpenError: 'Could not open the system Displays settings: {e}',
+  sysDisplaysDemo: 'System settings cannot be opened in demo mode',
 
   groupGeneral: 'General',
   groupSaved: 'Saved setups',
@@ -234,6 +247,11 @@ const en = {
   aboutDriverKey: 'Driver',
   aboutDriverVal: 'displayplacer bundled (MIT)',
   aboutPathKey: 'Setup files',
+  aboutHomeKey: 'Homepage',
+  aboutFeedbackKey: 'Feedback',
+  linkGithub: 'GitHub',
+  linkGiteeMirror: 'Gitee',
+  // 英文没有 aboutMirrorNote：“国内镜像”对英文使用者不构成信息，模板里按语言整行不渲染
   updateName: 'Updates',
   updateIdle: 'Not checked',
   updateChecking: 'Checking…',

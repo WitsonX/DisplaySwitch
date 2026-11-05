@@ -78,7 +78,32 @@
     <div v-else class="panel-body" :class="{ single: isSingle, 'preset-first': presetFirstLayout }">
       <div class="cols">
         <div class="col col-left">
-          <div class="section-label">{{ $t('titleDisplays') }}</div>
+          <div class="section-label label-displays">
+            {{ $t('titleDisplays') }}
+            <button
+              class="sys-btn"
+              :aria-label="$t('sysDisplaysTip')"
+              @click="openSystemDisplays"
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M14 4h6v6" />
+                <path d="M20 4l-8 8" />
+                <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+              </svg>
+            </button>
+            <!-- 自绘而不是原生 title：title 跟鼠标位置走、冒得不稳定，开「显示器」这种
+                 低频入口需要位置固定的稳定提示；视觉上沿用 .preset-tip 那套深色气泡 -->
+            <span class="sys-tip">{{ $t('sysDisplaysTip') }}</span>
+          </div>
           <DisplayList
             :displays="enriched"
             :selected-id="isSingle ? '' : selectedId"
@@ -457,6 +482,17 @@ export default {
         this.showToast(t('openError', { e }))
       }
     },
+    // 系统自带的「显示器」设置：排列对齐、色彩配置这些 displayplacer 管不到的项。
+    // 打开后自己收面板，不等那 300ms 失焦延迟隐藏，否则看着像点完卡了一下才消失
+    async openSystemDisplays() {
+      try {
+        await api.openDisplaySettings()
+        if (this.isMock) this.showToast(t('sysDisplaysDemo'))
+        else await this.closePanel()
+      } catch (e) {
+        this.showToast(t('sysDisplaysOpenError', { e }))
+      }
+    },
     toDraft() {
       return this.displays.map((x) => ({
         id: x.id,
@@ -467,10 +503,12 @@ export default {
         hz: x.hz ?? null,
         color_depth: x.color_depth ?? null,
         degree: x.degree || 0,
-        enabled: x.enabled !== false
+        enabled: x.enabled !== false,
+        // 当前位置：后端据此平移到主屏锚点，改分辨率、切场景都不会动用户拖好的排列
+        origin: x.origin ?? null
       }))
     },
-    draftToConfig(draft) {
+    draftToConfig(draft, withOrigin = true) {
       for (const x of draft) {
         if (x.role === 'mirror') {
           const t = draft.find((y) => y.id === x.target)
@@ -481,17 +519,31 @@ export default {
         }
       }
       return {
-        displays: draft.map((x) => ({
-          ctx_id: x.id,
-          role: x.role,
-          mirror_target: x.role === 'mirror' ? x.target : null,
-          res: x.res,
-          scaling: x.scaling,
-          hz: x.hz,
-          color_depth: x.color_depth,
-          degree: x.degree,
-          enabled: x.enabled
-        }))
+        displays: draft.map((x) => {
+          const d = {
+            ctx_id: x.id,
+            role: x.role,
+            mirror_target: x.role === 'mirror' ? x.target : null,
+            res: x.res,
+            scaling: x.scaling,
+            hz: x.hz,
+            color_depth: x.color_depth,
+            degree: x.degree,
+            enabled: x.enabled
+          }
+          // 排列不进预设：它属于物理工位、跟场景无关，预设文件里存了坐标反而会
+          // 把一个工位的布局绑到另一个工位上
+          if (withOrigin) d.origin = x.origin
+          return d
+        })
+      }
+    },
+    // 预设里没有坐标（见 draftToConfig），所以应用前拿系统当下的 origin 现填，
+    // 切场景只改分辨率、角色和镜像关系
+    withLiveOrigins(config) {
+      const byId = new Map(this.displays.map((d) => [d.id, d.origin ?? null]))
+      return {
+        displays: config.displays.map((x) => ({ ...x, origin: byId.get(x.ctx_id) ?? null }))
       }
     },
     descOf(config) {
@@ -665,7 +717,7 @@ export default {
       this.switching = true
       if (this.quickSwitch) api.setPanelLock(true)
       try {
-        await api.applyConfig(p.config)
+        await api.applyConfig(this.withLiveOrigins(p.config))
         this.showToast(t('presetApplied', { name: p.name }))
         await this.load()
         this.startCountdown()
@@ -726,7 +778,7 @@ export default {
         return
       }
       try {
-        await api.savePreset(name, this.draftToConfig(this.toDraft()))
+        await api.savePreset(name, this.draftToConfig(this.toDraft(), false))
         this.saving = false
         this.newPresetName = ''
         this.showToast(t('presetSaved', { name }))
@@ -952,6 +1004,68 @@ function pretty(res) {
 
 .single-label {
   margin-top: 10px;
+}
+
+/* 系统显示器设置入口：平时淡到只剩一点轮廓，指针进到这行才亮起来，
+   不跟「显示器」这个分组标题抢注意力，也不给主流程添可点区域 */
+.sys-btn {
+  margin-left: auto;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--text-2);
+  opacity: 0.3;
+  flex-shrink: 0;
+}
+
+.label-displays:hover .sys-btn {
+  opacity: 0.7;
+}
+
+.sys-btn:hover {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sys-btn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 气泡锚在图标正下方、右端对齐。放上方会被裁掉——面板本体是 overflow-y:auto 的
+   滚动容器，「显示器」这行就是它的第一个子元素，头顶没有可显示的空间。
+   平时 opacity + visibility 一起关掉，双保险：既看不见也不会占住命中区域 */
+.label-displays {
+  position: relative;
+}
+
+.sys-tip {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 40;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+
+.sys-btn:hover + .sys-tip,
+.sys-btn:focus-visible + .sys-tip {
+  opacity: 1;
+  visibility: visible;
 }
 
 .preset-area {

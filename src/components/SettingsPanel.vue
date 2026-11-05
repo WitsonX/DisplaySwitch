@@ -141,7 +141,7 @@
         <img class="a-icon" :src="appIcon" alt="快切屏 DisplaySwitch 图标" />
         <div class="a-brand-text">
           <div class="a-brand-name">
-            <span class="a-name">快切屏</span>
+            <span v-if="!isEn" class="a-name">快切屏</span>
             <span class="a-en">DisplaySwitch</span>
             <span class="a-ver">v{{ version }}</span>
             <span v-if="buildLabel" class="a-canary">{{ buildLabel }}</span>
@@ -153,6 +153,10 @@
         <span class="a-k">{{ $t('aboutDriverKey') }}</span>
         <span class="a-v">{{ $t('aboutDriverVal') }}</span>
       </div>
+      <div class="a-row">
+        <span class="a-k">{{ $t('aboutPathKey') }}</span>
+        <span class="a-v a-path">~/Library/Application Support/com.displayswitch.app/presets/</span>
+      </div>
       <div class="a-row a-row-center">
         <span class="a-k">{{ $t('updateName') }}</span>
         <span class="a-v" :class="{ 'a-v-new': updateState === 'available' }">{{ updateText }}</span>
@@ -160,10 +164,29 @@
           {{ $t(updateState === 'available' ? 'updateOpen' : 'updateCheck') }}
         </button>
       </div>
-      <div class="a-row">
-        <span class="a-k">{{ $t('aboutPathKey') }}</span>
-        <span class="a-v a-path">~/Library/Application Support/com.displayswitch.app/presets/</span>
+      <div class="a-row a-foot">
+        <span class="a-group">
+          <span class="a-g-k">{{ $t('aboutHomeKey') }}</span>
+          <button class="a-link" @click="$emit('open-url', links.home.github)">
+            {{ $t('linkGithub') }}
+          </button>
+          <span class="a-link-sep">·</span>
+          <button class="a-link" @click="$emit('open-url', links.home.gitee)">
+            {{ $t('linkGiteeMirror') }}
+          </button>
+        </span>
+        <span class="a-group">
+          <span class="a-g-k">{{ $t('aboutFeedbackKey') }}</span>
+          <button class="a-link" @click="$emit('open-url', links.feedback.github)">
+            {{ $t('linkGithub') }}
+          </button>
+          <span class="a-link-sep">·</span>
+          <button class="a-link" @click="$emit('open-url', links.feedback.gitee)">
+            {{ $t('linkGiteeMirror') }}
+          </button>
+        </span>
       </div>
+      <div v-if="!isEn" class="a-note">{{ $t('aboutMirrorNote') }}</div>
     </div>
 
     <button class="s-quit" @click="$emit('quit')">{{ $t('quitApp') }}</button>
@@ -174,7 +197,7 @@
 import { version } from '../../package.json'
 import appIcon from '../assets/app-icon.png'
 import { i18n, t } from '../i18n'
-import { checkForUpdate } from '../update'
+import { checkForUpdate, REPO_LINKS } from '../update'
 
 export default {
   name: 'SettingsPanel',
@@ -192,6 +215,8 @@ export default {
   data() {
     return {
       version,
+      // 关于页的项目主页 / 反馈建议两组地址，见 update.js 的 REPO_LINKS
+      links: REPO_LINKS,
       // 绿色版构建标识（正式版为空）：由 Vite define 注入，见 vite.config.js
       buildStamp: typeof __DISPLAYSWITCH_BUILD__ === 'string' ? __DISPLAYSWITCH_BUILD__ : '',
       appIcon,
@@ -209,6 +234,10 @@ export default {
     }
   },
   computed: {
+    // 底部那句镜像说明只在中文界面出现。i18n.lang 是 reactive 的，切语言会跟着重渲染
+    isEn() {
+      return i18n.lang === 'en'
+    },
     rows() {
       const present = new Set(this.present)
       return this.presets.map((p) => ({
@@ -761,6 +790,13 @@ export default {
   color: var(--text-2);
 }
 
+/* 英文版隐藏「快切屏」后，DisplaySwitch 变为首个名称元素，升级为主标题样式 */
+.a-brand-name > .a-en:first-child {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
 .a-desc {
   font-size: 11.5px;
   line-height: 1.45;
@@ -805,6 +841,63 @@ export default {
 .a-v-new {
   color: var(--accent);
   font-weight: 600;
+}
+
+/* 底部元信息一行：两组「标签 + 链接」居中并排，组间一道竖线，整行按组折行。
+   不写死行数：窗口宽度会变（单屏时只有 380px），英文也没有「镜像」两个字。
+   每组 nowrap，所以折行点落在组边界而不是某条链接中间；字号比上面几行小半档 */
+.a-foot {
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 0;
+  row-gap: 6px;
+  border-bottom: 0;
+  font-size: 11px;
+}
+
+.a-group {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+/* 竖线两侧各 8px：单屏时窗口 380px，按 11px 间距实测只剩 5px 余量，再挤就会折行、
+   竖线跑到第二行行首（真机不会窄于 380，但得留出字体渲染差异的余量） */
+.a-group + .a-group {
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--divider);
+}
+
+.a-g-k {
+  color: var(--text-2);
+}
+
+.a-link {
+  font: inherit;
+  line-height: 1.45;
+  color: var(--accent);
+  padding: 0;
+}
+
+.a-link:hover {
+  text-decoration: underline;
+}
+
+.a-link-sep {
+  color: var(--text-2);
+  opacity: 0.6;
+}
+
+/* 镜像说明：中文界面单独占一行，英文界面不渲染（见模板里的 isEn）。
+   以前把「国内镜像」写进每条链接，四个标签被撑成两行，反而读不清 */
+.a-note {
+  padding: 4px 0 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-2);
+  text-align: center;
 }
 
 .a-btn {

@@ -20,6 +20,7 @@
 - **「失焦即隐藏」延迟 300ms**：点托盘会让面板先失焦，原来的即时隐藏把窗口收掉，托盘的抬起事件随后到达、又被 `toggle_panel_at` 弹回来——第二下永远收不起。现在 `Focused(false)` 走 `schedule_blur_hide`：挂一枚 `BLUR_HIDE_PENDING` 标志并起 300ms 定时器，到点时标志没被抢掉才真隐；托盘点击和热键切换进来先 `swap` 抢标志，抢到就是「再点一下收起」，直接隐藏、不再弹出。自己 `hide()` 触发的失焦此时窗口已不可见，不再重复挂起；`PANEL_LOCK`（快速切换倒计时）期间整个分支跳过。
 - **定位**：托盘点击回传的坐标是物理像素，按 `window.scale_factor()` 换算后再定位；窗口尺寸本身用逻辑点表达，避免 Retina 2x 下两套单位混用。
 - **热插拔**：`setup` 里注册 `CGDisplayRegisterReconfigurationCallback`。合盖/开盖/插拔会连续触发多次回调，所以用一个自增序号做 800ms 防抖，静默期过后只 `emit("displays-changed")` 一次；前端 `listen` 到就重新 `load()`，面板重新拿到焦点时也会刷一次。
+- **系统显示器设置入口**：「显示器」分组标题行右端一枚淡图标（`App.vue` 的 `.sys-btn`，`opacity:0.3`，指针进到这行升到 0.7、按到才全亮并染 accent，只有 tooltip 不带文字）。提示是自绘的 `.sys-tip` 而不是原生 `title`（原生跟着鼠标走、出现时机不稳），而且只能锚在图标下方——面板本体是 `overflow-y:auto` 的滚动容器，「显示器」这行紧贴顶边，气泡放上面会被裁掉。入口本身走 `open_display_settings`。DS 只负责「不弄乱排列」（见「应用配置：按角色生成 spec」），拖拽精调和色彩配置这类还是在系统面板里做，所以这个入口是逃生门不是功能。深链的 pane id 在 macOS 13 换过（13+ 是 `com.apple.Displays-Settings.extension`，12 及以前只认 `com.apple.preference.displays`），而 `open` 拿到不存在的 id 照样返回 0、只是把设置开到首页，没法靠返回码兜底，所以由 `SystemVersion.plist` 的 `ProductVersion` 主版本号选 id（纯文本 XML，直接读，不 fork `sw_vers`）。点完之后前端主动 `closePanel()`，不等那 300ms 失焦延迟隐藏，否则看着像点完卡了一下才收。
 
 ## Tauri 命令清单
 
@@ -40,7 +41,8 @@
 | `quit_app` | — | — | 退出（`app.exit(0)`） |
 | `get_autostart` | — | `bool` | 回读系统里 LaunchAgent 的真实注册结果 |
 | `set_autostart` | `enabled` | `bool` | 开/关登录自启动，返回最终状态 |
-| `open_url` | `url` | — | 只允许打开发布页，见「检查更新」 |
+| `open_url` | `url` | — | 只允许打开本项目仓库的页面（发布页 / 主页 / issue），见「检查更新」 |
+| `open_display_settings` | — | — | 打开系统自带的「显示器」设置，pane id 按系统版本选，见「架构与托盘窗口」 |
 | `set_preset_order` | `order` | `AppSettings` | 拖动排序后整份覆盖方案顺序，空数组表示「没拖过，按读盘顺序」 |
 | `set_preset_first` | `on` | `AppSettings` | 预设场景优先开关 |
 | `quick_switch_launched` | — | `bool` | 前端挂载后取走启动参数标记（读一次即清零）；为真时后端顺带按屏数定宽、居中弹出面板 |
@@ -72,9 +74,12 @@ App 自定义命令不需要 capability 条目，`src-tauri/capabilities/default
 `build_specs()` 把前端的角色草稿翻译成 displayplacer 参数：
 
 - 镜像组合并成一条 `id:目标+从1+从2 res:... scaling:on`，分辨率取目标屏的。
-- 主显示器放 `origin:(0,0)`——displayplacer 正是借 origin 来设置系统主屏，所以「谁是主显」这件事必须显式落到坐标上。
-- 其余组按宽度从左到右排开，避免重叠。
+- **位置优先沿用调用方带进来的当前 `origin`**（`preserved_layout()`），只整体平移到「主屏 = `(0,0)`」这个系统锚点上。displayplacer 把 origin `(0,0)` 那块当主屏，所以「谁是主显」必须落到坐标上；换主屏时其余屏跟着平移，相对位置不变。以前无条件按下面那条自动排，会把用户在系统设置里拖好的上下错位抹掉。
+- 两种情况回落自动布局（`auto_layout()`）：任一块屏没带 `origin`，或平移后矩形重叠（典型是解镜像那一刻——两块屏的历史位置都在 `(0,0)`，照搬反而不合法）。回落是整批的，半保留半重排比全重排更难解释。重叠判定拿 `res` 的宽高算矩形，`degree` 为 90/270 时宽高互换。
+- 自动布局：主屏 `(0,0)`，其余按宽度从左到右排开，保证不重叠。
 - 独立屏附带 `hz` / `color_depth`，**镜像组省略**：镜像组里两块屏的刷新率不一定兼容，带上就会整条命令失败。
+
+**预设不存坐标**：排列属于物理工位、跟场景无关，所以 `draftToConfig` 只在应用路径带 `origin`，存预设前剔掉；`ApplyDisplay.origin` 是 `Option` + `#[serde(default, skip_serializing_if = "Option::is_none")]`，不带这个字段的老预设照常解析、写出去的文件结构也跟以前一模一样。应用预设时由前端 `withLiveOrigins()` 拿系统当下的坐标现填（按 serial id 对齐；预设只在全部屏都插着时才出现在场景条里，所以一定填得到）。
 
 前端提交前还有一层角色约束（主显示器全局唯一、降级自动移交、镜像目标只能是主屏或扩展屏、镜像屏分辨率跟随目标），所以后端拿到的草稿一定是合法组合。
 
@@ -122,6 +127,7 @@ Rust 侧只有 `src-tauri/src/lang.rs`：一个 `AtomicBool` 生效语言缓存 
 - **发布页地址由本模块用常量 + tag 自己拼，不采用接口返回的 `html_url`**；tag 已经过白名单正则，所以拼出来的 URL 只可能是我们自己仓库的发布页。
 - 跳转走 Rust 的 `open_url` 命令（`Command::new("open")`）。命令端再收一次口子：只放过 `https://github.com/WitsonX/DisplaySwitch/` 和 `https://gitee.com/Witson/DisplaySwitch/` 两个前缀，其余一律拒绝并返回双语错误（`is_release_page()` 有单元测试，覆盖前缀混淆和 http 降级）。
 - 发现新版后按钮变成「打开发布页」，不再触发检查；想重查一次，关掉面板重开即可（`v-if` 会销毁设置视图，状态回到「未检查」）。
+- 「关于」最底下是一行居中的元信息：两组「标签 + 链接」并排、中间一道竖线（项目主页 GitHub · Gitee 镜像｜ 反馈建议 GitHub · Gitee 镜像），链接只写站点名，「国内镜像」挪到下面单独一句说明里；那句只在中文界面渲染，对英文使用者不构成信息。两组放得下就一行、放不下按组折行（单屏时窗口只有 380px），所以行数不写死。这行与「更新」那行各管各的，更新的状态机（未检查 / 检查中 / 已是最新 / 发现新版）仍在自己那行里。链接走同一条 `open_url`：地址在 `src/update.js` 的 `REPO_LINKS` 里拼，和检查更新共用同一组 owner/repo 常量，换账号只改一处。主页那两条必须带尾斜杠——白名单前缀是带斜杠的，裸仓库名匹配不上会被拒。
 
 ## 自启动
 
@@ -169,7 +175,7 @@ open -a DisplaySwitch --args -quick-switch   # 等价短参 -qs
 npm install
 npm run tauri dev          # 开发运行（热重载）
 npm run tauri build        # 打包
-cd src-tauri && cargo test # 解析器 / 设置 / 语言 / 发布页白名单单元测试
+cd src-tauri && cargo test # 解析器 / 设置 / 语言 / 发布页白名单 / 布局保持单元测试
 ```
 
 - 浏览器预览：`npm run dev` 打开 http://localhost:5173，底部有「假数据」提示，不接入真实切换。
