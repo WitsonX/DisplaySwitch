@@ -68,6 +68,27 @@ jobs:
           tagName: v__VERSION__
           releaseName: '快切屏 DisplaySwitch v__VERSION__'
           releaseBody: |
+            ## v1.1.0 更新日志 / Changelog
+
+            **新增 / Added**
+            - 全局快捷键：在设置里点一下输入框、按下组合键即可录制（须含 ⌘/⌃/⌥ 之一，⌘⇧D 这类）；面板可见时 ⌘Q 退出、⌘1–⌘9 直接切到第 N 个场景，按住 ⌘ 会把这两件事浮在界面上（场景胶囊顶上标出 ⌘1…⌘9，底部出现一行提示）/ A recorded global shortcut (needs ⌘/⌃/⌥, e.g. ⌘⇧D) summons and hides the panel from anywhere; with the panel open ⌘Q quits and ⌘1–⌘9 apply the Nth preset — hold ⌘ and both appear in the UI (⌘1…⌘9 badges on the pills, a hint line at the bottom).
+            - 命令行入口 `open -a DisplaySwitch --args -qs`：给启动器、快捷指令、便签类工具用。冷启动 → 面板居中弹出并进入「预设场景优先」→ 点一个场景 → 3 秒倒计时后自动退出；App 已经在托盘里时，同样的命令只是唤出面板，不倒数 / A command-line entry (`-quick-switch`, short alias `-qs`) for launchers, Shortcuts and sticky notes: cold start opens the panel centered in the presets-first layout, applying a setup starts a 3-second auto-quit countdown; if the app already lives in the menu bar the same call merely wakes it.
+            - 设置里的「预设场景优先」开关：把场景胶囊整排提到面板最前面并放大，适合只靠场景切换的人 / A "saved presets first" switch in settings moves the preset row to the top of the panel with larger buttons — for people who only ever switch setups.
+            - 设置里的已存方案可拖动排序，顺序落盘后主面板的场景胶囊跟着排 / Saved setups can be reordered by dragging in settings; the panel's pills follow the stored order.
+            - 「显示器」标题行右端一枚淡图标直达 macOS 自带的显示器设置——排列对齐、色彩配置这类快切屏管不到的项有个逃生门（深链按系统版本选 pane id，macOS 13 起系统改过扩展名）/ A faint glyph at the right of the "Displays" heading opens macOS's own Displays settings — the escape hatch for arranging and colour profiles that DisplaySwitch deliberately does not manage (the deep link picks the right pane id per macOS version).
+            - 「关于」最底一行接上项目主页与反馈建议，各带 GitHub / Gitee 镜像两个入口 / The bottom of About now links the project home and the issue tracker, each with a GitHub and a Gitee entry.
+
+            **优化 / Improved**
+            - 切分辨率、切场景不再把你拖好的显示器排列抹平：当前的相对位置会整体搬到新的主屏锚点上，只在解镜像那种历史位置撞在一起的时刻才重新排布；排列也不会再被存进预设——它属于桌子，不属于场景 / Resolution and setup changes no longer flatten the arrangement you dragged together: current offsets are carried onto the new main-display anchor, and only the moment an un-mirror leaves two displays on the same historic origin does the app re-layout. Arrangement is no longer saved inside a setup either — it belongs to the desk, not to the scene.
+
+            **修复 / Fixed**
+            - 第二次打开 App 后图标赖在程序坞不走：不进 Dock 改由 bundle 声明，进程从登记起就是后台 Agent / A second launch used to leave a Dock icon behind: the app is now declared as an agent in the bundle, so LaunchServices never gives it one.
+            - 面板刚弹出时第一下点击可能被吞 / The first click on a freshly shown panel could be swallowed.
+            - 点托盘想收起面板，结果它闪一下又弹回来 / Clicking the menu bar icon to close the panel made it flicker and reopen.
+            - 按住 ⌘1 不放会连发几十次切换，屏幕反复重排 / Holding ⌘1 fired dozens of switches in a row; now a keystroke means exactly one switch, and a switch already running ignores further clicks and keys.
+
+            ---
+
             macOS 菜单栏显示器切换工具：给每台屏定角色（主显/镜像/扩展）选分辨率，配置存成预设一键切换。
 
             A macOS menu bar display switcher: assign each screen a role (main / mirror / extend), pick a resolution, and switch saved presets in one click.

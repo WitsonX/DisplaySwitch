@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "display-switch"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "core-graphics 0.24.0",
  "serde",
